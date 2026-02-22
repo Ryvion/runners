@@ -7,15 +7,28 @@ Designed to run inside an OCI container on DePIN compute nodes.
 import hashlib
 import json
 import os
+import signal
 import sys
 import time
 
 from llama_cpp import Llama
 
+_shutdown = False
+
+def _handle_sigterm(signum, frame):
+    global _shutdown
+    _shutdown = True
+    print(json.dumps({"event": "sigterm_received"}), file=sys.stderr)
+    sys.exit(143)  # 128 + 15 (SIGTERM)
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
+signal.signal(signal.SIGINT, _handle_sigterm)
+
 MODEL_DIR = os.environ.get("RYV_MODEL_DIR", "/models")
 DEFAULT_MODEL = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
 MAX_CONTEXT = int(os.environ.get("RYV_CTX_SIZE", "2048"))
 N_THREADS = int(os.environ.get("RYV_THREADS", "4"))
+GPU_LAYERS = int(os.environ.get("RYV_GPU_LAYERS", "0"))
 
 
 def find_model():
@@ -51,6 +64,7 @@ def run_inference(model_path, job):
         model_path=model_path,
         n_ctx=MAX_CONTEXT,
         n_threads=N_THREADS,
+        n_gpu_layers=GPU_LAYERS,
         verbose=False,
     )
 
