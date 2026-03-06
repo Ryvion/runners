@@ -13,11 +13,22 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.runner }}
+    name: Build ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        runner: [llm-runner, embed-runner, transcode-runner]
+        include:
+          - name: embed-runner
+            context: ./embed-runner
+            dockerfile: ./embed-runner/Dockerfile
+            image: ghcr.io/ryvion/embed-runner
+            compatibility_tag: 0.1.0
+          - name: transcode-runner
+            context: ./transcode-runner
+            dockerfile: ./transcode-runner/Dockerfile
+            image: ghcr.io/ryvion/transcode-runner
+            compatibility_tag: 0.1.0
     steps:
       - uses: actions/checkout@v4
 
@@ -32,32 +43,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check for Dockerfile
-        id: check
-        env:
-          RUNNER_NAME: ${{ matrix.runner }}
-        run: |
-          if [ -f "${RUNNER_NAME}/Dockerfile" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::No Dockerfile for ${RUNNER_NAME}"
-          fi
-
-      - name: Lowercase image name
-        if: steps.check.outputs.exists == 'true'
-        id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.runner }}" >> "$GITHUB_OUTPUT"
-
       - name: Build and push
-        if: steps.check.outputs.exists == 'true'
         uses: docker/build-push-action@v6
         with:
-          context: ./${{ matrix.runner }}
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ steps.image.outputs.name }}:latest
-            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ matrix.image }}:latest
+            ${{ matrix.image }}:${{ github.sha }}
+            ${{ matrix.image }}:${{ matrix.compatibility_tag }}
 
   go-lint:
     name: Lint Go runners
