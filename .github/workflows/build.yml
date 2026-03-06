@@ -23,12 +23,66 @@ jobs:
             context: ./embed-runner
             dockerfile: ./embed-runner/Dockerfile
             image: ghcr.io/ryvion/embed-runner
-            compatibility_tag: 0.1.0
+            tags: |
+              ghcr.io/ryvion/embed-runner:latest
+              ghcr.io/ryvion/embed-runner:${{ github.sha }}
+              ghcr.io/ryvion/embed-runner:0.1.0
           - name: transcode-runner
             context: ./transcode-runner
             dockerfile: ./transcode-runner/Dockerfile
             image: ghcr.io/ryvion/transcode-runner
-            compatibility_tag: 0.1.0
+            tags: |
+              ghcr.io/ryvion/transcode-runner:latest
+              ghcr.io/ryvion/transcode-runner:${{ github.sha }}
+              ghcr.io/ryvion/transcode-runner:0.1.0
+          - name: vllm-runner
+            context: ./vllm-runner
+            dockerfile: ./vllm-runner/Dockerfile
+            image: ghcr.io/ryvion/vllm-runner
+            tags: |
+              ghcr.io/ryvion/vllm-runner:latest
+              ghcr.io/ryvion/vllm-runner:${{ github.sha }}
+              ghcr.io/ryvion/vllm-runner:deepseek-r1-671b
+              ghcr.io/ryvion/vllm-runner:deepseek-v3-671b
+              ghcr.io/ryvion/vllm-runner:llama-3_3-70b
+              ghcr.io/ryvion/vllm-runner:qwen-2_5-72b
+              ghcr.io/ryvion/vllm-runner:mistral-large-2
+          - name: spatial-recon-runner
+            context: ./spatial-stage-runner
+            dockerfile: ./spatial-stage-runner/Dockerfile
+            image: ghcr.io/ryvion/spatial-recon-runner
+            build_args: STAGE_KIND=spatial_recon
+            tags: |
+              ghcr.io/ryvion/spatial-recon-runner:latest
+              ghcr.io/ryvion/spatial-recon-runner:${{ github.sha }}
+              ghcr.io/ryvion/spatial-recon-runner:0.1.0
+          - name: pointcloud-align-runner
+            context: ./spatial-stage-runner
+            dockerfile: ./spatial-stage-runner/Dockerfile
+            image: ghcr.io/ryvion/pointcloud-align-runner
+            build_args: STAGE_KIND=pointcloud_align
+            tags: |
+              ghcr.io/ryvion/pointcloud-align-runner:latest
+              ghcr.io/ryvion/pointcloud-align-runner:${{ github.sha }}
+              ghcr.io/ryvion/pointcloud-align-runner:0.1.0
+          - name: mesh-optimize-runner
+            context: ./spatial-stage-runner
+            dockerfile: ./spatial-stage-runner/Dockerfile
+            image: ghcr.io/ryvion/mesh-optimize-runner
+            build_args: STAGE_KIND=mesh_optimize
+            tags: |
+              ghcr.io/ryvion/mesh-optimize-runner:latest
+              ghcr.io/ryvion/mesh-optimize-runner:${{ github.sha }}
+              ghcr.io/ryvion/mesh-optimize-runner:0.1.0
+          - name: scene-render-runner
+            context: ./spatial-stage-runner
+            dockerfile: ./spatial-stage-runner/Dockerfile
+            image: ghcr.io/ryvion/scene-render-runner
+            build_args: STAGE_KIND=scene_render
+            tags: |
+              ghcr.io/ryvion/scene-render-runner:latest
+              ghcr.io/ryvion/scene-render-runner:${{ github.sha }}
+              ghcr.io/ryvion/scene-render-runner:0.1.0
     steps:
       - uses: actions/checkout@v4
 
@@ -49,10 +103,8 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
-          tags: |
-            ${{ matrix.image }}:latest
-            ${{ matrix.image }}:${{ github.sha }}
-            ${{ matrix.image }}:${{ matrix.compatibility_tag }}
+          build-args: ${{ matrix.build_args }}
+          tags: ${{ matrix.tags }}
 
   go-lint:
     name: Lint Go runners
@@ -66,3 +118,7 @@ jobs:
         run: cd embed-runner && go vet ./...
       - name: Vet transcode-runner
         run: cd transcode-runner && go vet ./...
+      - name: Vet spatial-stage-runner
+        run: cd spatial-stage-runner && go vet ./...
+      - name: Check vllm-runner syntax
+        run: python -m py_compile vllm-runner/run.py

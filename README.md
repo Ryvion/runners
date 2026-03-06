@@ -6,11 +6,13 @@ Current scope:
 
 - `embed-runner`
 - `transcode-runner`
+- `vllm-runner`
+- `spatial-stage-runner` (published as `spatial-recon-runner`, `pointcloud-align-runner`, `mesh-optimize-runner`, `scene-render-runner`)
 
 Important deployment note:
 
 - `llm-runner` is still built from `/Users/caspian/Developer/Startup/Ryvion/node-agent` and published as `ghcr.io/ryvion/llm-runner`.
-- This repository intentionally does not publish `llm-runner` to avoid tag collisions until the LLM image is migrated here.
+- `vllm-runner` in this repository is the batched large-model container family used by `hub-orch` for the GPU-heavy OpenAI-compatible model tags.
 
 Runner contract:
 
@@ -25,5 +27,12 @@ Runner contract:
 
 Compatibility:
 
-- The CI workflow publishes `ghcr.io/ryvion/embed-runner:0.1.0` and `ghcr.io/ryvion/transcode-runner:0.1.0` because `hub-orch` currently references those tags directly.
-- It also publishes `latest` and the commit SHA tags for operator testing.
+- The CI workflow publishes the exact image names `hub-orch` routes today:
+  - `ghcr.io/ryvion/embed-runner:0.1.0`
+  - `ghcr.io/ryvion/transcode-runner:0.1.0`
+  - `ghcr.io/ryvion/vllm-runner:{latest,deepseek-r1-671b,deepseek-v3-671b,llama-3_3-70b,qwen-2_5-72b,mistral-large-2}`
+  - `ghcr.io/ryvion/spatial-recon-runner:0.1.0`
+  - `ghcr.io/ryvion/pointcloud-align-runner:0.1.0`
+  - `ghcr.io/ryvion/mesh-optimize-runner:0.1.0`
+  - `ghcr.io/ryvion/scene-render-runner:0.1.0`
+- Each image also receives `latest` and commit SHA tags for operator testing.
