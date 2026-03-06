@@ -25,6 +25,13 @@ Runner contract:
    - write `/work/receipt.json`
    - optionally write `/work/metrics.json`
 
+Spatial pipeline stages now perform real geometry work instead of placeholder manifests:
+
+- `spatial-recon-runner`: OpenCV two-view sparse reconstruction from uploaded image sets
+- `pointcloud-align-runner`: coarse ICP-style point-cloud alignment
+- `mesh-optimize-runner`: mesh generation/cleanup via convex hull + trimesh processing
+- `scene-render-runner`: headless preview rendering to PNG for review workflows
+
 Compatibility:
 
 - The CI workflow publishes the exact image names `hub-orch` routes today:
