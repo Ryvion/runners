@@ -4,11 +4,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,6 +29,28 @@ type receipt struct {
 	OK         bool   `json:"ok"`
 }
 
+type ffprobeOutput struct {
+	Streams []ffprobeStream `json:"streams"`
+	Format  ffprobeFormat   `json:"format"`
+}
+
+type ffprobeStream struct {
+	CodecType    string `json:"codec_type"`
+	CodecName    string `json:"codec_name"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	AvgFrameRate string `json:"avg_frame_rate"`
+	Channels     int    `json:"channels"`
+	SampleRate   string `json:"sample_rate"`
+}
+
+type ffprobeFormat struct {
+	FormatName string `json:"format_name"`
+	Duration   string `json:"duration"`
+	Size       string `json:"size"`
+	BitRate    string `json:"bit_rate"`
+}
+
 func main() {
 	js := loadJob()
 	inputPath, outputPath := resolvePaths(js)
@@ -41,11 +66,19 @@ func main() {
 
 	sum, size := hashFile(outputPath)
 	writeJSON("/work/receipt.json", receipt{OutputHash: sum, OK: true})
-	writeJSON("/work/metrics.json", map[string]any{
+	metrics := map[string]any{
 		"engine":       "ffmpeg",
 		"duration_ms":  durationMs,
 		"output_bytes": size,
-	})
+		"output_name":  filepath.Base(outputPath),
+	}
+	if ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(outputPath)), "."); ext != "" {
+		metrics["output_format"] = ext
+	}
+	for key, value := range probeOutput(outputPath) {
+		metrics[key] = value
+	}
+	writeJSON("/work/metrics.json", metrics)
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{
 		"output_hash": sum,
 		"ok":          true,
@@ -149,6 +182,117 @@ func hashFile(path string) (string, int64) {
 		log.Fatalf("hash output: %v", err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), n
+}
+
+func probeOutput(path string) map[string]any {
+	cmd := exec.Command(
+		"ffprobe",
+		"-v", "error",
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+		path,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return map[string]any{
+			"probe_error": err.Error(),
+		}
+	}
+
+	var probe ffprobeOutput
+	if err := json.Unmarshal(out, &probe); err != nil {
+		return map[string]any{
+			"probe_error": fmt.Sprintf("decode ffprobe: %v", err),
+		}
+	}
+
+	metrics := map[string]any{}
+	if name := strings.TrimSpace(probe.Format.FormatName); name != "" {
+		metrics["container_family"] = firstCSVToken(name)
+	}
+	if seconds, ok := parseFloat(probe.Format.Duration); ok && seconds > 0 {
+		metrics["output_duration_seconds"] = seconds
+	}
+	if bitrate, ok := parseInt(probe.Format.BitRate); ok && bitrate > 0 {
+		metrics["output_bitrate_bps"] = bitrate
+	}
+	for _, stream := range probe.Streams {
+		switch strings.TrimSpace(stream.CodecType) {
+		case "video":
+			if codec := strings.TrimSpace(stream.CodecName); codec != "" {
+				metrics["video_codec"] = codec
+			}
+			if stream.Width > 0 {
+				metrics["width"] = stream.Width
+			}
+			if stream.Height > 0 {
+				metrics["height"] = stream.Height
+			}
+			if fps, ok := parseFrameRate(stream.AvgFrameRate); ok && fps > 0 {
+				metrics["frame_rate"] = fps
+			}
+		case "audio":
+			if codec := strings.TrimSpace(stream.CodecName); codec != "" {
+				metrics["audio_codec"] = codec
+			}
+			if stream.Channels > 0 {
+				metrics["audio_channels"] = stream.Channels
+			}
+			if sampleRate, ok := parseInt(stream.SampleRate); ok && sampleRate > 0 {
+				metrics["audio_sample_rate_hz"] = sampleRate
+			}
+		}
+	}
+	return metrics
+}
+
+func firstCSVToken(value string) string {
+	if idx := strings.Index(value, ","); idx >= 0 {
+		return strings.TrimSpace(value[:idx])
+	}
+	return strings.TrimSpace(value)
+}
+
+func parseFloat(value string) (float64, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func parseInt(value string) (int64, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, false
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return parsed, true
+}
+
+func parseFrameRate(value string) (float64, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "0/0" {
+		return 0, false
+	}
+	if strings.Contains(value, "/") {
+		parts := strings.SplitN(value, "/", 2)
+		num, okNum := parseFloat(parts[0])
+		den, okDen := parseFloat(parts[1])
+		if !okNum || !okDen || den == 0 {
+			return 0, false
+		}
+		return num / den, true
+	}
+	return parseFloat(value)
 }
 
 func writeJSON(path string, v any) {

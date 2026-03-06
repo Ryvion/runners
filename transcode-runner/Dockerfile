@@ -1,9 +1,10 @@
 FROM golang:1.24-bookworm AS builder
 
 WORKDIR /src
+ARG TARGETARCH
 COPY go.mod .
 COPY main.go .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/transcode-runner .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags='-s -w' -o /out/transcode-runner .
 
 FROM debian:bookworm-slim
 

@@ -24,6 +24,7 @@ jobs:
             context: ./embed-runner
             dockerfile: ./embed-runner/Dockerfile
             image: ghcr.io/ryvion/embed-runner
+            platforms: linux/amd64
             tags: |
               ghcr.io/ryvion/embed-runner:latest
               ghcr.io/ryvion/embed-runner:${{ github.sha }}
@@ -32,6 +33,7 @@ jobs:
             context: ./transcode-runner
             dockerfile: ./transcode-runner/Dockerfile
             image: ghcr.io/ryvion/transcode-runner
+            platforms: linux/amd64,linux/arm64
             tags: |
               ghcr.io/ryvion/transcode-runner:latest
               ghcr.io/ryvion/transcode-runner:${{ github.sha }}
@@ -40,6 +42,7 @@ jobs:
             context: ./vllm-runner
             dockerfile: ./vllm-runner/Dockerfile
             image: ghcr.io/ryvion/vllm-runner
+            platforms: linux/amd64
             tags: |
               ghcr.io/ryvion/vllm-runner:latest
               ghcr.io/ryvion/vllm-runner:${{ github.sha }}
@@ -53,6 +56,7 @@ jobs:
             dockerfile: ./spatial-stage-runner/Dockerfile
             image: ghcr.io/ryvion/spatial-recon-runner
             build_args: STAGE_KIND=spatial_recon
+            platforms: linux/amd64
             tags: |
               ghcr.io/ryvion/spatial-recon-runner:latest
               ghcr.io/ryvion/spatial-recon-runner:${{ github.sha }}
@@ -62,6 +66,7 @@ jobs:
             dockerfile: ./spatial-stage-runner/Dockerfile
             image: ghcr.io/ryvion/pointcloud-align-runner
             build_args: STAGE_KIND=pointcloud_align
+            platforms: linux/amd64
             tags: |
               ghcr.io/ryvion/pointcloud-align-runner:latest
               ghcr.io/ryvion/pointcloud-align-runner:${{ github.sha }}
@@ -71,6 +76,7 @@ jobs:
             dockerfile: ./spatial-stage-runner/Dockerfile
             image: ghcr.io/ryvion/mesh-optimize-runner
             build_args: STAGE_KIND=mesh_optimize
+            platforms: linux/amd64
             tags: |
               ghcr.io/ryvion/mesh-optimize-runner:latest
               ghcr.io/ryvion/mesh-optimize-runner:${{ github.sha }}
@@ -80,6 +86,7 @@ jobs:
             dockerfile: ./spatial-stage-runner/Dockerfile
             image: ghcr.io/ryvion/scene-render-runner
             build_args: STAGE_KIND=scene_render
+            platforms: linux/amd64
             tags: |
               ghcr.io/ryvion/scene-render-runner:latest
               ghcr.io/ryvion/scene-render-runner:${{ github.sha }}
@@ -116,6 +123,7 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           build-args: ${{ matrix.build_args }}
           provenance: false
