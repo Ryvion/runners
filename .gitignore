@@ -1,3 +1,5 @@
 # Compiled runner binaries
 embed-runner/embed-runner
 transcode-runner/transcode-runner
+__pycache__/
+*.pyc
