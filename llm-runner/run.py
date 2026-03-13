@@ -26,20 +26,31 @@ signal.signal(signal.SIGINT, _handle_sigterm)
 
 MODEL_DIR = os.environ.get("RYV_MODEL_DIR", "/models")
 DEFAULT_MODEL = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+ENV_MODEL_FILE = os.environ.get("RYV_MODEL_FILE", "").strip()
 MAX_CONTEXT = int(os.environ.get("RYV_CTX_SIZE", "2048"))
 N_THREADS = int(os.environ.get("RYV_THREADS", "4"))
 GPU_LAYERS = int(os.environ.get("RYV_GPU_LAYERS", "0"))
 
 
-def find_model():
-    """Find the GGUF model file."""
+def find_model(job):
+    """Find the configured GGUF model file deterministically."""
+    requested = str(job.get("model_file") or ENV_MODEL_FILE or "").strip()
+    if requested:
+        path = os.path.join(MODEL_DIR, requested)
+        if os.path.isfile(path):
+            return path
+        return None
+
     path = os.path.join(MODEL_DIR, DEFAULT_MODEL)
     if os.path.isfile(path):
         return path
-    # Fall back to any .gguf file in the model directory
-    for f in os.listdir(MODEL_DIR):
-        if f.endswith(".gguf"):
-            return os.path.join(MODEL_DIR, f)
+
+    try:
+        ggufs = sorted(f for f in os.listdir(MODEL_DIR) if f.endswith(".gguf"))
+    except FileNotFoundError:
+        return None
+    if len(ggufs) == 1:
+        return os.path.join(MODEL_DIR, ggufs[0])
     return None
 
 
@@ -95,7 +106,7 @@ def run_inference(model_path, job):
 
 def main():
     job = load_job()
-    model_path = find_model()
+    model_path = find_model(job)
 
     if not model_path:
         err = {"error": "no model found", "model_dir": MODEL_DIR}

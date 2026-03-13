@@ -1,0 +1,31 @@
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev build-essential cmake curl ca-certificates git && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV CMAKE_ARGS="-DGGML_CUDA=on"
+ENV FORCE_CMAKE=1
+RUN pip3 install --no-cache-dir llama-cpp-python==0.3.8
+
+RUN mkdir -p /models && \
+    curl -fSL --retry 3 -o /models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
+    "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip libgomp1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /models /models
+
+ENV RYV_GPU_LAYERS=-1
+
+RUN useradd -r -s /usr/sbin/nologin runner
+COPY run.py /app/run.py
+
+USER runner
+WORKDIR /work
+ENTRYPOINT ["python3", "/app/run.py"]
