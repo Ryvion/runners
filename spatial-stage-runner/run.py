@@ -6,6 +6,9 @@ This stage runner turns the placeholder spatial pipeline into actual geometry wo
 - `pointcloud_align`: point-cloud normalization / coarse alignment
 - `mesh_optimize`: convex-hull mesh generation and cleanup
 - `scene_render`: preview rendering from mesh or point cloud
+- `capture_qc`: validate image capture quality (blur, overlap, metadata)
+- `epoch_diff`: compare two point clouds for change detection
+- `export_pack`: package processed outputs into delivery-ready bundles
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import shutil
 import sys
 import tempfile
 import urllib.request
+import urllib.parse
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -81,13 +85,12 @@ def prepare_input_dir(job: dict) -> Path:
     if src_file and Path(src_file).exists():
         copy_or_extract(Path(src_file), INPUT_DIR)
 
+    materialize_manifest_inputs(job.get("manifest"), INPUT_DIR)
+
     payload_url = str(job.get("payload_url") or job.get("input_url") or "").strip()
     if payload_url:
-        download_target = INPUT_DIR / Path(payload_url).name
-        if download_target.suffix == "":
-            download_target = INPUT_DIR / "payload.bin"
-        with urllib.request.urlopen(payload_url, timeout=300) as response:
-            download_target.write_bytes(response.read())
+        download_target = INPUT_DIR / safe_remote_name(payload_url, "payload.bin")
+        download_url_to_path(payload_url, download_target)
         copy_or_extract(download_target, INPUT_DIR)
 
     if not any(INPUT_DIR.iterdir()):
@@ -114,6 +117,61 @@ def copy_or_extract(source: Path, destination: Path) -> None:
     target = destination / source.name
     if target.resolve() != source.resolve():
         shutil.copy2(source, target)
+
+
+def safe_remote_name(url: str, fallback: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    name = Path(parsed.path).name.strip()
+    return name or fallback
+
+
+def manifest_target_path(raw_path: str, url: str, index: int) -> Path:
+    raw_path = raw_path.strip()
+    if raw_path:
+        parts = [part for part in Path(raw_path.lstrip("/")).parts if part not in ("", ".", "..")]
+        if parts:
+            return Path(*parts)
+    name = safe_remote_name(url, f"asset-{index + 1}.bin")
+    return Path(name)
+
+
+def download_url_to_path(url: str, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url, timeout=300) as response:
+        target.write_bytes(response.read())
+
+
+def materialize_manifest_inputs(manifest: object, destination: Path) -> None:
+    if not isinstance(manifest, dict):
+        return
+
+    for key in ("payload_url", "archive_url", "artifact_url", "blob_url", "input_url"):
+        archive_url = str(manifest.get(key) or "").strip()
+        if not archive_url:
+            continue
+        archive_target = destination / safe_remote_name(archive_url, "payload.bin")
+        download_url_to_path(archive_url, archive_target)
+        copy_or_extract(archive_target, destination)
+        return
+
+    assets = manifest.get("assets")
+    if not isinstance(assets, list):
+        return
+
+    for index, asset in enumerate(assets):
+        if isinstance(asset, str):
+            asset_url = asset.strip()
+            target = manifest_target_path("", asset_url, index)
+        elif isinstance(asset, dict):
+            asset_url = str(asset.get("url") or asset.get("href") or asset.get("source_url") or "").strip()
+            target = manifest_target_path(str(asset.get("path") or asset.get("name") or ""), asset_url, index)
+        else:
+            continue
+        if not asset_url:
+            continue
+        download_target = destination / target
+        download_url_to_path(asset_url, download_target)
+        copy_or_extract(download_target, download_target.parent)
 
 
 def find_files(root: Path, exts: set[str]) -> list[Path]:
@@ -466,6 +524,16 @@ def write_outputs(stage_name: str, result: StageOutput) -> None:
     print(json.dumps(receipt))
 
 
+def _dict_to_stage_output(result: dict, output_dir: Path) -> StageOutput:
+    """Convert a dict-based stage result into a StageOutput."""
+    if not result.get("ok"):
+        raise RuntimeError(result.get("error", "stage failed"))
+    artifact_files = [output_dir / f for f in result.get("artifact_files", [])]
+    metrics = result.get("metrics", {})
+    summary = {k: v for k, v in result.items() if k not in ("ok", "artifact_files", "metrics")}
+    return StageOutput(files=artifact_files, summary=summary, metrics=metrics)
+
+
 def run_stage(stage: str, input_root: Path) -> StageOutput:
     output_dir = Path(tempfile.mkdtemp(prefix=f"ryv_{stage}_"))
     try:
@@ -477,6 +545,18 @@ def run_stage(stage: str, input_root: Path) -> StageOutput:
             result = mesh_optimization(find_files(input_root, POINT_EXTS | MESH_EXTS), output_dir)
         elif stage == "scene_render":
             result = render_scene(find_files(input_root, POINT_EXTS | MESH_EXTS), output_dir)
+        elif stage == "capture_qc":
+            from stages.capture_qc import run_capture_qc
+            raw = run_capture_qc(str(input_root), str(output_dir))
+            result = _dict_to_stage_output(raw, output_dir)
+        elif stage == "epoch_diff":
+            from stages.epoch_diff import run_epoch_diff
+            raw = run_epoch_diff(str(input_root), str(output_dir))
+            result = _dict_to_stage_output(raw, output_dir)
+        elif stage == "export_pack":
+            from stages.export_pack import run_export_pack
+            raw = run_export_pack(str(input_root), str(output_dir))
+            result = _dict_to_stage_output(raw, output_dir)
         else:
             raise RuntimeError(f"unsupported spatial stage {stage}")
         return result
