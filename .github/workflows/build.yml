@@ -91,6 +91,24 @@ jobs:
               ghcr.io/ryvion/scene-render-runner:latest
               ghcr.io/ryvion/scene-render-runner:${{ github.sha }}
               ghcr.io/ryvion/scene-render-runner:0.1.0
+          - name: image-gen-runner
+            context: ./image-gen-runner
+            dockerfile: ./image-gen-runner/Dockerfile
+            image: ghcr.io/ryvion/image-gen-runner
+            platforms: linux/amd64
+            tags: |
+              ghcr.io/ryvion/image-gen-runner:latest
+              ghcr.io/ryvion/image-gen-runner:${{ github.sha }}
+              ghcr.io/ryvion/image-gen-runner:0.1.0
+          - name: whisper-runner
+            context: ./whisper-runner
+            dockerfile: ./whisper-runner/Dockerfile
+            image: ghcr.io/ryvion/whisper-runner
+            platforms: linux/amd64
+            tags: |
+              ghcr.io/ryvion/whisper-runner:latest
+              ghcr.io/ryvion/whisper-runner:${{ github.sha }}
+              ghcr.io/ryvion/whisper-runner:0.1.0
     steps:
       - uses: actions/checkout@v4
 
@@ -98,7 +116,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Free disk space for heavyweight images
-        if: matrix.name == 'vllm-runner'
+        if: contains(fromJSON('["vllm-runner","image-gen-runner","whisper-runner"]'), matrix.name)
         run: |
           echo "Before cleanup:"
           df -h
@@ -146,3 +164,7 @@ jobs:
         run: python -m py_compile spatial-stage-runner/run.py
       - name: Check vllm-runner syntax
         run: python -m py_compile vllm-runner/run.py
+      - name: Check image-gen-runner syntax
+        run: python -m py_compile image-gen-runner/run.py
+      - name: Check whisper-runner syntax
+        run: python -m py_compile whisper-runner/run.py
