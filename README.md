@@ -5,14 +5,18 @@ This repository owns the workload-specific container images that `hub-orch` can 
 Current scope:
 
 - `embed-runner`
+- `image-gen-runner`
+- `llm-runner`
 - `transcode-runner`
 - `vllm-runner`
+- `whisper-runner`
 - `spatial-stage-runner` (published as `spatial-recon-runner`, `pointcloud-align-runner`, `mesh-optimize-runner`, `scene-render-runner`)
 
-Important deployment note:
+Runner ownership rule:
 
-- `llm-runner` is still built from `/Users/caspian/Developer/Startup/Ryvion/node-agent` and published as `ghcr.io/ryvion/llm-runner`.
-- `vllm-runner` in this repository is the batched large-model container family used by `hub-orch` for the GPU-heavy OpenAI-compatible model tags.
+- Runner images live in this repository.
+- `node-agent` is responsible for runtime execution, not for owning runner image definitions.
+- `vllm-runner` remains the batched large-model container family used by `hub-orch` for the GPU-heavy OpenAI-compatible model tags.
 
 Runner contract:
 
@@ -35,11 +39,14 @@ Spatial pipeline stages now perform real geometry work instead of placeholder ma
 Compatibility:
 
 - The CI workflow publishes the exact image names `hub-orch` routes today:
-  - `ghcr.io/ryvion/embed-runner:0.1.0`
-  - `ghcr.io/ryvion/transcode-runner:0.1.0`
-  - `ghcr.io/ryvion/vllm-runner:{latest,deepseek-r1-671b,deepseek-v3-671b,llama-3_3-70b,qwen-2_5-72b,mistral-large-2}`
-  - `ghcr.io/ryvion/spatial-recon-runner:0.1.0`
-  - `ghcr.io/ryvion/pointcloud-align-runner:0.1.0`
-  - `ghcr.io/ryvion/mesh-optimize-runner:0.1.0`
+	- `ghcr.io/ryvion/embed-runner:0.1.0`
+	- `ghcr.io/ryvion/image-gen-runner:0.1.0`
+	- `ghcr.io/ryvion/llm-runner:0.1.0`
+	- `ghcr.io/ryvion/transcode-runner:0.1.0`
+	- `ghcr.io/ryvion/vllm-runner:{latest,deepseek-r1-671b,deepseek-v3-671b,llama-3_3-70b,qwen-2_5-72b,mistral-large-2}`
+	- `ghcr.io/ryvion/whisper-runner:0.1.0`
+	- `ghcr.io/ryvion/spatial-recon-runner:0.1.0`
+	- `ghcr.io/ryvion/pointcloud-align-runner:0.1.0`
+	- `ghcr.io/ryvion/mesh-optimize-runner:0.1.0`
   - `ghcr.io/ryvion/scene-render-runner:0.1.0`
 - Each image also receives `latest` and commit SHA tags for operator testing.
