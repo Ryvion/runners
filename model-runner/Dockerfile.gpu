@@ -1,0 +1,32 @@
+# Ryvion Custom Model Runner — GPU variant
+# CUDA-accelerated inference for GGUF, ONNX, and PyTorch/SafeTensors models
+#
+# Build:
+#   docker build -f Dockerfile.gpu -t ghcr.io/ryvion/model-runner:gpu .
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# GPU-enabled deps
+RUN pip3 install --no-cache-dir \
+    numpy \
+    onnxruntime-gpu \
+    llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 \
+    transformers \
+    torch --index-url https://download.pytorch.org/whl/cu124 \
+    safetensors \
+    sentencepiece \
+    protobuf \
+    accelerate
+
+COPY run.py /app/run.py
+
+RUN useradd -m -s /bin/bash runner
+USER runner
+
+ENTRYPOINT ["python3", "/app/run.py"]
