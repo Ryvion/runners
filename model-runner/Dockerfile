@@ -11,9 +11,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps for model loading
+# System deps for model loading and building llama-cpp-python
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+    curl build-essential cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # PyTorch CPU from dedicated index
