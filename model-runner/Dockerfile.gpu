@@ -12,13 +12,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# GPU-enabled deps
+# PyTorch GPU from CUDA index
+RUN pip3 install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cu124
+
+# llama-cpp-python with CUDA support
+RUN pip3 install --no-cache-dir \
+    llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124
+
+# All other deps from PyPI
 RUN pip3 install --no-cache-dir \
     numpy \
     onnxruntime-gpu \
-    llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 \
     transformers \
-    torch --index-url https://download.pytorch.org/whl/cu124 \
     safetensors \
     sentencepiece \
     protobuf \

@@ -16,13 +16,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps — install in order of stability (least changing first)
+# PyTorch CPU from dedicated index
+RUN pip install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cpu
+
+# All other deps from PyPI
 RUN pip install --no-cache-dir \
     numpy \
     onnxruntime \
     llama-cpp-python \
     transformers \
-    torch --index-url https://download.pytorch.org/whl/cpu \
     safetensors \
     sentencepiece \
     protobuf
