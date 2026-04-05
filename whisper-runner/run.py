@@ -46,6 +46,12 @@ def main() -> int:
             audio_path = str(candidate)
 
     if not audio_path:
+        # Check prefetched audio (downloaded by node-agent before container start)
+        prefetched = Path("/work/input_audio")
+        if prefetched.exists():
+            audio_path = str(prefetched)
+
+    if not audio_path:
         # Try common locations
         for ext in ["wav", "mp3", "m4a", "flac", "ogg", "webm", "mp4"]:
             candidate = Path(f"/work/input.{ext}")
@@ -56,7 +62,9 @@ def main() -> int:
     if not audio_path:
         # Check /work/ for any audio file
         for f in Path("/work").iterdir():
-            if f.suffix.lower() in {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".webm", ".mp4"}:
+            if f.suffix.lower() in {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".webm", ".mp4", ""}:
+                if f.name in ("job.json", "receipt.json", "metrics.json"):
+                    continue
                 audio_path = str(f)
                 break
 

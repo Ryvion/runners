@@ -221,14 +221,22 @@ def main():
     model_name = job.get("model_name", "custom-model")
     input_data = job.get("input", {})
 
-    if not model_url:
-        fail("no model_url in job spec")
-
     # Determine filename from format
     ext_map = {"gguf": ".gguf", "onnx": ".onnx", "pytorch": ".bin", "safetensors": ".safetensors"}
     filename = f"model{ext_map.get(model_format, '.bin')}"
 
-    model_path = download_model(model_url, filename)
+    # Check for pre-downloaded model (node-agent prefetches model_url into /work/)
+    prefetched = WORK_DIR / "model.bin"
+    if prefetched.exists() and prefetched.stat().st_size > 0:
+        log("using_prefetched_model", size_mb=round(prefetched.stat().st_size / (1024 * 1024), 1))
+        model_path = MODEL_DIR / filename
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy2(str(prefetched), str(model_path))
+    elif model_url:
+        model_path = download_model(model_url, filename)
+    else:
+        fail("no model_url in job spec and no pre-downloaded model")
 
     log("running_inference", model=model_name, format=model_format)
 
