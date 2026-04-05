@@ -5,8 +5,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
+# Install PyTorch with CUDA support first
+RUN pip3 install --no-cache-dir \
+    torch --index-url https://download.pytorch.org/whl/cu124
+
+# Install training stack (without compiling custom CUDA kernels)
+RUN pip3 install --no-cache-dir \
+    unsloth datasets trl transformers peft \
+    bitsandbytes accelerate sentencepiece protobuf
 
 # ---------------------------------------------------------------------------
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
@@ -19,12 +25,6 @@ COPY --from=builder /usr/local/lib/python3.10/dist-packages \
      /usr/local/lib/python3.10/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Run as non-root
-RUN useradd -r -s /usr/sbin/nologin runner && \
-    mkdir -p /work /models && chown runner:runner /work /models
-
 COPY train.py /app/train.py
-
-USER runner
 WORKDIR /work
-ENTRYPOINT ["python3", "/app/train.py"]
+ENTRYPOINT ["python3", "-u", "/app/train.py"]

@@ -1,9 +1,10 @@
-unsloth[cu124-ampere-torch250]
+torch>=2.5
 datasets>=3.0
 trl>=0.12
 transformers>=4.46
-torch>=2.5
 peft>=0.14
 bitsandbytes>=0.45
 sentencepiece
 protobuf
+accelerate
+unsloth
