@@ -1,0 +1,36 @@
+FROM rocm/dev-ubuntu-22.04:6.2-complete AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-dev build-essential cmake curl \
+    ca-certificates git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install PyTorch for ROCm
+RUN pip3 install --no-cache-dir \
+    torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
+
+COPY requirements.txt /tmp/requirements.txt
+# Install everything except torch (already installed for ROCm)
+RUN pip3 install --no-cache-dir --no-deps unsloth && \
+    pip3 install --no-cache-dir datasets trl transformers peft \
+    bitsandbytes sentencepiece protobuf
+
+# ---------------------------------------------------------------------------
+FROM rocm/dev-ubuntu-22.04:6.2-complete
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip libgomp1 ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /usr/local/lib/python3.10/dist-packages \
+     /usr/local/lib/python3.10/dist-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+RUN useradd -r -s /usr/sbin/nologin runner && \
+    mkdir -p /work /models && chown runner:runner /work /models
+
+COPY train.py /app/train.py
+
+USER runner
+WORKDIR /work
+ENTRYPOINT ["python3", "/app/train.py"]
