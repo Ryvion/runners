@@ -118,6 +118,15 @@ jobs:
               ghcr.io/ryvion/model-runner:latest
               ghcr.io/ryvion/model-runner:${{ github.sha }}
               ghcr.io/ryvion/model-runner:0.1.0
+          - name: finetune-runner
+            context: ./finetune-runner
+            dockerfile: ./finetune-runner/Dockerfile
+            image: ghcr.io/ryvion/finetune-runner
+            platforms: linux/amd64
+            tags: |
+              ghcr.io/ryvion/finetune-runner:latest
+              ghcr.io/ryvion/finetune-runner:${{ github.sha }}
+              ghcr.io/ryvion/finetune-runner:0.1.0
     steps:
       - uses: actions/checkout@v4
 
@@ -125,7 +134,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Free disk space for heavyweight images
-        if: contains(fromJSON('["vllm-runner","image-gen-runner","whisper-runner","model-runner"]'), matrix.name)
+        if: contains(fromJSON('["vllm-runner","image-gen-runner","whisper-runner","model-runner","finetune-runner"]'), matrix.name)
         run: |
           echo "Before cleanup:"
           df -h
@@ -179,3 +188,5 @@ jobs:
         run: python -m py_compile whisper-runner/run.py
       - name: Check model-runner syntax
         run: python -m py_compile model-runner/run.py
+      - name: Check finetune-runner syntax
+        run: python -m py_compile finetune-runner/train.py
