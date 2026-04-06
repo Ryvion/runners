@@ -21,6 +21,30 @@ except Exception as _e:
 
 print("IMPORTS_START", file=sys.stderr, flush=True)
 
+try:
+    import hashlib
+    print("import hashlib ok", file=sys.stderr, flush=True)
+    import json
+    print("import json ok", file=sys.stderr, flush=True)
+    import signal
+    print("import signal ok", file=sys.stderr, flush=True)
+    import time
+    print("import time ok", file=sys.stderr, flush=True)
+    import traceback
+    print("import traceback ok", file=sys.stderr, flush=True)
+except Exception as _e2:
+    print(f"STDLIB_IMPORT_FAILED: {_e2}", file=sys.stderr, flush=True)
+    sys.exit(1)
+
+# Test if signal handlers work under --cap-drop=ALL
+try:
+    signal.signal(signal.SIGTERM, lambda s, f: None)
+    print("signal.signal ok", file=sys.stderr, flush=True)
+except Exception as _e3:
+    print(f"SIGNAL_FAILED: {_e3}", file=sys.stderr, flush=True)
+
+print("ALL_MODULE_IMPORTS_OK", file=sys.stderr, flush=True)
+
 """Ryvion LoRA fine-tuning runner.
 
 Reads /work/job.json, fine-tunes a base model with LoRA using the Unsloth
@@ -85,23 +109,24 @@ def load_job(path="/work/job.json"):
 
 
 def download_training_data(job):
-    """Download training data from URL or blob path."""
-    import urllib.request
+    """Find or download training data."""
+    # Always check local files first (node-agent prefetches into /work/)
+    for candidate in ["/work/training.jsonl", "/work/data.jsonl", "/work/train.jsonl"]:
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
+            print(json.dumps({"event": "using_prefetched_training_data", "path": candidate, "size": os.path.getsize(candidate)}), file=sys.stderr)
+            return candidate
 
+    # Fallback: download from URL
     url = job.get("training_data_url", "").strip()
     if not url:
-        # Check if data was mounted or pre-downloaded
-        for candidate in ["/work/training.jsonl", "/work/data.jsonl", "/work/train.jsonl"]:
-            if os.path.isfile(candidate):
-                return candidate
         return None
 
-    dest = "/work/training.jsonl"
+    import urllib.request
+    dest = "/work/training_downloaded.jsonl"
     print(json.dumps({"event": "downloading_training_data", "url": url[:80]}), file=sys.stderr)
     try:
         urllib.request.urlretrieve(url, dest)
-        size = os.path.getsize(dest)
-        print(json.dumps({"event": "training_data_downloaded", "size_bytes": size}), file=sys.stderr)
+        print(json.dumps({"event": "training_data_downloaded", "size": os.path.getsize(dest)}), file=sys.stderr)
         return dest
     except Exception as e:
         print(json.dumps({"error": f"failed to download training data: {e}"}), file=sys.stderr)
