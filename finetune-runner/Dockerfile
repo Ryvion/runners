@@ -1,38 +1,32 @@
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev build-essential cmake curl \
     ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
 
-# Install PyTorch with CUDA support first
+# Install PyTorch with CUDA 12.4 support (pinned to avoid backtracking)
 RUN pip3 install --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cu124
+    torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
-# Install training stack
+# Install unsloth and training stack with pinned versions
 RUN pip3 install --no-cache-dir \
-    "unsloth[cu124-torch250]" datasets trl transformers peft \
-    bitsandbytes accelerate sentencepiece protobuf triton
+    unsloth \
+    datasets==3.2.0 \
+    trl==0.12.2 \
+    transformers==4.47.1 \
+    peft==0.14.0 \
+    bitsandbytes==0.45.0 \
+    accelerate==1.2.1 \
+    sentencepiece \
+    protobuf
 
-# Verify imports work before proceeding to runtime stage
+# Verify imports
 RUN python3 -c "\
-import torch; print('torch:', torch.__version__, 'cuda:', torch.cuda.is_available()); \
+import torch; print('torch:', torch.__version__); \
 from unsloth import FastLanguageModel; print('unsloth: ok'); \
 from trl import SFTTrainer; print('trl: ok'); \
-from datasets import Dataset; print('datasets: ok'); \
-print('All imports verified')"
-
-# ---------------------------------------------------------------------------
-# Use devel image for runtime too — bitsandbytes/triton need CUDA libs
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip libgomp1 ca-certificates curl && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /usr/local/lib/python3.10/dist-packages \
-     /usr/local/lib/python3.10/dist-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+print('All imports OK')"
 
 COPY train.py /app/train.py
 WORKDIR /work
