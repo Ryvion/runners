@@ -186,12 +186,16 @@ def main():
             report_to="none",
         )
 
+        # Format dataset for SFTTrainer (trl 0.13+: no dataset_text_field, use formatting_func)
+        def formatting_func(example):
+            return example["text"]
+
         trainer = SFTTrainer(
             model=model,
-            tokenizer=tokenizer,
+            processing_class=tokenizer,
             train_dataset=dataset,
             args=training_args,
-            dataset_text_field="text",
+            formatting_func=formatting_func,
             max_seq_length=1024,
             packing=False,
         )
