@@ -5,21 +5,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
 
-# PyTorch with CUDA 12.4 (2.6+ required for torchao compatibility)
+# PyTorch with CUDA 12.4
 RUN pip3 install --no-cache-dir \
-    torch --index-url https://download.pytorch.org/whl/cu124
+    torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
-# Unsloth (brings compatible transformers/trl/peft)
-RUN pip3 install --no-cache-dir unsloth
-
-# Remaining training deps
+# Standard LoRA training stack — NO unsloth (torchao incompatible with stable torch)
 RUN pip3 install --no-cache-dir \
-    datasets bitsandbytes accelerate sentencepiece protobuf
+    transformers==4.47.1 \
+    peft==0.14.0 \
+    trl==0.13.0 \
+    datasets==3.2.0 \
+    bitsandbytes==0.45.0 \
+    accelerate==1.2.1 \
+    sentencepiece protobuf
 
-# Verify basic Python + pip install succeeded (GPU packages verified at runtime)
-RUN python3 -c "import json, hashlib, signal, sys; print('base imports ok')" && \
-    pip3 list | grep -E "unsloth|torch|trl|peft|datasets|bitsandbytes" && \
-    echo "ALL PACKAGES INSTALLED"
+# Verify imports work (no GPU needed for these)
+RUN python3 -c "\
+import torch; print('torch', torch.__version__); \
+from transformers import AutoModelForCausalLM, AutoTokenizer; print('transformers ok'); \
+from peft import LoraConfig, get_peft_model; print('peft ok'); \
+from trl import SFTTrainer; print('trl ok'); \
+from datasets import Dataset; print('datasets ok'); \
+print('ALL IMPORTS OK')"
 
 COPY train.py /app/train.py
 WORKDIR /work
