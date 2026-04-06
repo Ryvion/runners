@@ -5,9 +5,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
 
-# PyTorch with CUDA 12.4
+# PyTorch with CUDA 12.4 (2.6+ required for torchao compatibility)
 RUN pip3 install --no-cache-dir \
-    torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+    torch --index-url https://download.pytorch.org/whl/cu124
 
 # Unsloth (brings compatible transformers/trl/peft)
 RUN pip3 install --no-cache-dir unsloth
