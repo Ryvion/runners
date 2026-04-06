@@ -1,3 +1,26 @@
+#!/usr/bin/env python3
+# Immediate diagnostic output before ANY imports
+import sys, os
+print("FINETUNE_RUNNER_START", file=sys.stderr, flush=True)
+print(f"python={sys.version}", file=sys.stderr, flush=True)
+print(f"cwd={os.getcwd()}", file=sys.stderr, flush=True)
+print(f"work_files={os.listdir('/work') if os.path.isdir('/work') else 'NO /work'}", file=sys.stderr, flush=True)
+print(f"uid={os.getuid()} gid={os.getgid()}", file=sys.stderr, flush=True)
+
+try:
+    import json as _json
+    job_path = "/work/job.json"
+    if os.path.exists(job_path):
+        with open(job_path) as _f:
+            _job = _json.load(_f)
+        print(f"job_task={_job.get('task','?')} base={_job.get('base_model_id','?')}", file=sys.stderr, flush=True)
+    else:
+        print("NO job.json found!", file=sys.stderr, flush=True)
+except Exception as _e:
+    print(f"DIAG_ERROR: {_e}", file=sys.stderr, flush=True)
+
+print("IMPORTS_START", file=sys.stderr, flush=True)
+
 """Ryvion LoRA fine-tuning runner.
 
 Reads /work/job.json, fine-tunes a base model with LoRA using the Unsloth
