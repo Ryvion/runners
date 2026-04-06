@@ -9,13 +9,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir \
     torch --index-url https://download.pytorch.org/whl/cu124
 
-# Install training stack (without compiling custom CUDA kernels)
+# Install training stack
 RUN pip3 install --no-cache-dir \
-    unsloth datasets trl transformers peft \
-    bitsandbytes accelerate sentencepiece protobuf
+    "unsloth[cu124-torch250]" datasets trl transformers peft \
+    bitsandbytes accelerate sentencepiece protobuf triton
+
+# Verify imports work before proceeding to runtime stage
+RUN python3 -c "\
+import torch; print('torch:', torch.__version__, 'cuda:', torch.cuda.is_available()); \
+from unsloth import FastLanguageModel; print('unsloth: ok'); \
+from trl import SFTTrainer; print('trl: ok'); \
+from datasets import Dataset; print('datasets: ok'); \
+print('All imports verified')"
 
 # ---------------------------------------------------------------------------
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+# Use devel image for runtime too — bitsandbytes/triton need CUDA libs
+FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip libgomp1 ca-certificates curl && \
