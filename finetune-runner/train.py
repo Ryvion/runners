@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Ryvion LoRA fine-tuning runner (transformers + peft + trl).
+"""Ryvion LoRA fine-tuning runner.
 
-Reads /work/job.json, fine-tunes a base model with LoRA,
-saves the merged model, and writes /work/receipt.json.
+Uses the official HuggingFace SFTTrainer + PEFT LoRA API (2025/2026).
+Reference: https://huggingface.co/docs/trl/sft_trainer
 """
 import hashlib
 import json
@@ -12,53 +12,47 @@ import sys
 import time
 import traceback
 
-print("FINETUNE_RUNNER_START", file=sys.stderr, flush=True)
+print("FINETUNE_RUNNER v2", file=sys.stderr, flush=True)
 
 _shutdown = False
-def _handle_sigterm(signum, frame):
+def _handle_sigterm(s, f):
     global _shutdown
     _shutdown = True
     sys.exit(143)
-
 signal.signal(signal.SIGTERM, _handle_sigterm)
 signal.signal(signal.SIGINT, _handle_sigterm)
 
 
-def load_job(path="/work/job.json"):
+def load_job():
     try:
-        with open(path) as f:
+        with open("/work/job.json") as f:
             return json.load(f)
     except Exception as e:
-        print(json.dumps({"error": f"job.json: {e}"}), file=sys.stderr, flush=True)
+        print(f"job.json error: {e}", file=sys.stderr, flush=True)
         return {}
 
 
 def find_training_data(job):
-    """Find prefetched training data or download it."""
-    for candidate in ["/work/training.jsonl", "/work/data.jsonl", "/work/train.jsonl"]:
-        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
-            print(json.dumps({"event": "found_training_data", "path": candidate, "size": os.path.getsize(candidate)}), file=sys.stderr, flush=True)
-            return candidate
-
+    for path in ["/work/training.jsonl", "/work/data.jsonl", "/work/train.jsonl"]:
+        if os.path.isfile(path) and os.path.getsize(path) > 0:
+            print(json.dumps({"event": "found_data", "path": path, "size": os.path.getsize(path)}), file=sys.stderr, flush=True)
+            return path
     url = job.get("training_data_url", "").strip()
-    if not url:
-        return None
-
-    import urllib.request
-    dest = "/work/training_dl.jsonl"
-    try:
-        urllib.request.urlretrieve(url, dest)
-        return dest
-    except Exception as e:
-        print(json.dumps({"error": f"download failed: {e}"}), file=sys.stderr, flush=True)
-        return None
+    if url:
+        import urllib.request
+        dest = "/work/training_dl.jsonl"
+        try:
+            urllib.request.urlretrieve(url, dest)
+            return dest
+        except Exception as e:
+            print(f"download error: {e}", file=sys.stderr, flush=True)
+    return None
 
 
-def parse_training_data(path):
-    """Parse JSONL into text examples."""
-    examples = []
+def parse_jsonl(path):
+    rows = []
     with open(path) as f:
-        for i, line in enumerate(f, 1):
+        for line in f:
             line = line.strip()
             if not line:
                 continue
@@ -66,185 +60,160 @@ def parse_training_data(path):
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
-
             if "messages" in obj:
-                parts = []
-                for msg in obj["messages"]:
-                    role = msg.get("role", "user")
-                    content = msg.get("content", "")
-                    parts.append(f"### {role.title()}:\n{content}")
-                examples.append({"text": "\n\n".join(parts)})
+                parts = [f"### {m['role'].title()}:\n{m['content']}" for m in obj["messages"]]
+                rows.append({"text": "\n\n".join(parts)})
             elif "instruction" in obj:
-                text = f"### Instruction:\n{obj['instruction']}"
+                t = f"### Instruction:\n{obj['instruction']}"
                 if obj.get("input"):
-                    text += f"\n\n### Input:\n{obj['input']}"
-                text += f"\n\n### Response:\n{obj.get('output', '')}"
-                examples.append({"text": text})
+                    t += f"\n\n### Input:\n{obj['input']}"
+                t += f"\n\n### Response:\n{obj.get('output', '')}"
+                rows.append({"text": t})
             elif "text" in obj:
-                examples.append({"text": obj["text"]})
-    return examples
+                rows.append({"text": obj["text"]})
+    return rows
 
 
-def fail_receipt(msg):
+def fail(msg):
     h = hashlib.sha256(msg.encode()).hexdigest()
     with open("/work/receipt.json", "w") as f:
         json.dump({"output_hash": h, "error": msg}, f)
+    return 1
 
 
 def main():
     job = load_job()
     if not job or job.get("task") != "finetune":
-        fail_receipt("invalid job spec")
-        return 1
+        return fail("invalid job")
 
-    training_path = find_training_data(job)
-    if not training_path:
-        fail_receipt("no training data")
-        return 1
+    data_path = find_training_data(job)
+    if not data_path:
+        return fail("no training data")
 
     base_model = job.get("base_model_id", "TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     epochs = job.get("epochs", 3)
     lr = job.get("learning_rate", 2e-5)
-    batch_size = job.get("batch_size", 4)
     lora_rank = job.get("lora_rank", 16)
-    lora_alpha = job.get("lora_alpha", 32)
 
-    print(json.dumps({"event": "starting", "model": base_model, "epochs": epochs, "lr": lr}), file=sys.stderr, flush=True)
+    print(json.dumps({"event": "start", "model": base_model, "epochs": epochs}), file=sys.stderr, flush=True)
 
     try:
         import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
-        from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-        from trl import SFTTrainer
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+        from peft import LoraConfig
+        from trl import SFTConfig, SFTTrainer
         from datasets import Dataset
 
         print(json.dumps({"event": "imports_ok", "torch": torch.__version__, "cuda": torch.cuda.is_available()}), file=sys.stderr, flush=True)
 
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Parse data
+        rows = parse_jsonl(data_path)
+        if not rows:
+            return fail("no valid examples")
+        dataset = Dataset.from_list(rows)
+        print(json.dumps({"event": "dataset", "n": len(rows)}), file=sys.stderr, flush=True)
 
-        # Load model with 4-bit quantization
+        # 4-bit quantization
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16,
         )
 
-        print(json.dumps({"event": "loading_model", "model": base_model}), file=sys.stderr, flush=True)
+        # Load model
+        print(json.dumps({"event": "loading_model"}), file=sys.stderr, flush=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model,
+            quantization_config=bnb_config if torch.cuda.is_available() else None,
+            device_map="auto" if torch.cuda.is_available() else None,
+            torch_dtype=torch.float16,
+            trust_remote_code=True,
+        )
         tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-        model = AutoModelForCausalLM.from_pretrained(
-            base_model,
-            quantization_config=bnb_config if device == "cuda" else None,
-            device_map="auto" if device == "cuda" else None,
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            trust_remote_code=True,
-        )
-
-        if device == "cuda":
-            model = prepare_model_for_kbit_training(model)
-
-        # Apply LoRA
-        lora_config = LoraConfig(
+        # LoRA config
+        peft_config = LoraConfig(
             r=lora_rank,
-            lora_alpha=lora_alpha,
+            lora_alpha=lora_rank * 2,
             lora_dropout=0.05,
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
             bias="none",
             task_type="CAUSAL_LM",
         )
-        model = get_peft_model(model, lora_config)
-        print(json.dumps({"event": "lora_applied", "trainable_params": model.print_trainable_parameters()}), file=sys.stderr, flush=True)
 
-        # Load training data
-        examples = parse_training_data(training_path)
-        if not examples:
-            fail_receipt("no valid training examples")
-            return 1
-
-        dataset = Dataset.from_list(examples)
-        print(json.dumps({"event": "dataset_loaded", "examples": len(examples)}), file=sys.stderr, flush=True)
-
-        # Train
+        # Training config — using SFTConfig (not TrainingArguments)
         output_dir = "/work/output"
         os.makedirs(output_dir, exist_ok=True)
 
-        training_args = TrainingArguments(
+        sft_config = SFTConfig(
             output_dir=output_dir,
             num_train_epochs=epochs,
-            per_device_train_batch_size=batch_size,
-            gradient_accumulation_steps=max(1, 4 // batch_size),
+            per_device_train_batch_size=4,
+            gradient_accumulation_steps=1,
             learning_rate=lr,
             weight_decay=0.01,
             warmup_steps=5,
             logging_steps=1,
             save_strategy="no",
-            fp16=device == "cuda",
+            fp16=torch.cuda.is_available(),
             optim="adamw_torch",
             seed=42,
             report_to="none",
+            max_seq_length=1024,
+            packing=False,
+            dataset_text_field="text",
         )
 
-        # Format dataset for SFTTrainer (trl 0.13+: no dataset_text_field, use formatting_func)
-        def formatting_func(example):
-            return example["text"]
+        # Train — pass peft_config directly, SFTTrainer handles everything
+        print(json.dumps({"event": "training_start"}), file=sys.stderr, flush=True)
+        start = time.time()
 
         trainer = SFTTrainer(
             model=model,
-            processing_class=tokenizer,
             train_dataset=dataset,
-            args=training_args,
-            formatting_func=formatting_func,
-            max_seq_length=1024,
-            packing=False,
+            args=sft_config,
+            peft_config=peft_config,
+            processing_class=tokenizer,
         )
-
-        start_time = time.time()
-        print(json.dumps({"event": "training_start"}), file=sys.stderr, flush=True)
         result = trainer.train()
-        duration_ms = int((time.time() - start_time) * 1000)
-
+        duration_ms = int((time.time() - start) * 1000)
         loss = result.metrics.get("train_loss", 0)
+
         print(json.dumps({"event": "training_done", "duration_ms": duration_ms, "loss": loss}), file=sys.stderr, flush=True)
 
         # Save merged model
-        print(json.dumps({"event": "saving_model"}), file=sys.stderr, flush=True)
-        merged = model.merge_and_unload()
+        print(json.dumps({"event": "saving"}), file=sys.stderr, flush=True)
+        merged = trainer.model.merge_and_unload()
         save_dir = "/work/result"
         merged.save_pretrained(save_dir)
         tokenizer.save_pretrained(save_dir)
 
-        # Create output archive
         import shutil
         output_path = "/work/output.bin"
         shutil.make_archive("/work/result_archive", "zip", save_dir)
         shutil.move("/work/result_archive.zip", output_path)
-
         output_size = os.path.getsize(output_path)
-        print(json.dumps({"event": "model_saved", "size_bytes": output_size}), file=sys.stderr, flush=True)
+        print(json.dumps({"event": "saved", "size": output_size}), file=sys.stderr, flush=True)
 
     except Exception as e:
-        tb = traceback.format_exc()
-        print(json.dumps({"error": str(e), "traceback": tb}), file=sys.stderr, flush=True)
-        fail_receipt(str(e))
-        return 1
+        print(json.dumps({"error": str(e), "tb": traceback.format_exc()}), file=sys.stderr, flush=True)
+        return fail(str(e))
 
-    # Hash output
+    # Hash + receipt
     h = hashlib.sha256()
     with open(output_path, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
-    output_hash = h.hexdigest()
 
-    # Write receipt
     with open("/work/receipt.json", "w") as f:
         json.dump({
-            "output_hash": output_hash,
+            "output_hash": h.hexdigest(),
             "duration_ms": duration_ms,
             "train_loss": loss,
             "epochs": epochs,
-            "examples": len(examples),
+            "examples": len(rows),
             "base_model": base_model,
             "result_model_path": output_path,
             "finetune_job_id": job.get("finetune_job_id", ""),
@@ -253,7 +222,7 @@ def main():
     with open("/work/metrics.json", "w") as f:
         json.dump({"output_name": "output.bin", "duration_ms": duration_ms, "result_model_path": output_path}, f)
 
-    print(json.dumps({"status": "completed", "output_hash": output_hash, "duration_ms": duration_ms, "loss": loss}), flush=True)
+    print(json.dumps({"status": "completed", "hash": h.hexdigest(), "duration_ms": duration_ms, "loss": loss}), flush=True)
     return 0
 
 
