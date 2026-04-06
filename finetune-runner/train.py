@@ -183,19 +183,45 @@ def main():
 
         print(json.dumps({"event": "training_done", "duration_ms": duration_ms, "loss": loss}), file=sys.stderr, flush=True)
 
-        # Save merged model
-        print(json.dumps({"event": "saving"}), file=sys.stderr, flush=True)
+        # Save merged model as safetensors
+        print(json.dumps({"event": "saving_merged"}), file=sys.stderr, flush=True)
         merged = trainer.model.merge_and_unload()
         save_dir = "/work/result"
         merged.save_pretrained(save_dir)
         tokenizer.save_pretrained(save_dir)
 
-        import shutil
+        # Convert to GGUF for direct use with llama-server
         output_path = "/work/output.bin"
-        shutil.make_archive("/work/result_archive", "zip", save_dir)
-        shutil.move("/work/result_archive.zip", output_path)
+        gguf_converted = False
+        try:
+            import subprocess
+            convert_script = "/opt/llama.cpp/convert_hf_to_gguf.py"
+            if os.path.exists(convert_script):
+                print(json.dumps({"event": "converting_gguf"}), file=sys.stderr, flush=True)
+                gguf_path = "/work/result.gguf"
+                proc = subprocess.run(
+                    ["python3", convert_script, save_dir, "--outtype", "q8_0", "--outfile", gguf_path],
+                    capture_output=True, text=True, timeout=300
+                )
+                if proc.returncode == 0 and os.path.exists(gguf_path) and os.path.getsize(gguf_path) > 0:
+                    import shutil
+                    shutil.move(gguf_path, output_path)
+                    gguf_converted = True
+                    print(json.dumps({"event": "gguf_exported", "size": os.path.getsize(output_path)}), file=sys.stderr, flush=True)
+                else:
+                    print(json.dumps({"event": "gguf_failed", "stderr": proc.stderr[-500:]}), file=sys.stderr, flush=True)
+        except Exception as conv_err:
+            print(json.dumps({"event": "gguf_error", "error": str(conv_err)}), file=sys.stderr, flush=True)
+
+        # Fallback: zip the safetensors if GGUF conversion failed
+        if not gguf_converted:
+            import shutil
+            print(json.dumps({"event": "saving_zip_fallback"}), file=sys.stderr, flush=True)
+            shutil.make_archive("/work/result_archive", "zip", save_dir)
+            shutil.move("/work/result_archive.zip", output_path)
+
         output_size = os.path.getsize(output_path)
-        print(json.dumps({"event": "saved", "size": output_size}), file=sys.stderr, flush=True)
+        print(json.dumps({"event": "saved", "size": output_size, "format": "gguf" if gguf_converted else "safetensors_zip"}), file=sys.stderr, flush=True)
 
     except Exception as e:
         print(json.dumps({"error": str(e), "tb": traceback.format_exc()}), file=sys.stderr, flush=True)

@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir \
     torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
-# Standard LoRA training stack — NO unsloth (torchao incompatible with stable torch)
+# Standard LoRA training stack
 RUN pip3 install --no-cache-dir \
     transformers==4.47.1 \
     peft==0.14.0 \
@@ -19,13 +19,19 @@ RUN pip3 install --no-cache-dir \
     accelerate==1.2.1 \
     sentencepiece protobuf
 
-# Verify imports work (no GPU needed for these)
+# GGUF conversion tools from llama.cpp
+RUN pip3 install --no-cache-dir gguf && \
+    git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama.cpp && \
+    pip3 install --no-cache-dir -r /opt/llama.cpp/requirements.txt 2>/dev/null || true
+
+# Verify imports
 RUN python3 -c "\
 import torch; print('torch', torch.__version__); \
 from transformers import AutoModelForCausalLM, AutoTokenizer; print('transformers ok'); \
-from peft import LoraConfig, get_peft_model; print('peft ok'); \
-from trl import SFTTrainer; print('trl ok'); \
+from peft import LoraConfig; print('peft ok'); \
+from trl import SFTConfig, SFTTrainer; print('trl+SFTConfig ok'); \
 from datasets import Dataset; print('datasets ok'); \
+import gguf; print('gguf ok'); \
 print('ALL IMPORTS OK')"
 
 COPY train.py /app/train.py
