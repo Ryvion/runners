@@ -183,12 +183,32 @@ def main():
 
         print(json.dumps({"event": "training_done", "duration_ms": duration_ms, "loss": loss}), file=sys.stderr, flush=True)
 
-        # Save merged model as fp16 safetensors (dequantize from 4-bit so GGUF conversion works)
-        print(json.dumps({"event": "saving_merged"}), file=sys.stderr, flush=True)
-        merged = trainer.model.merge_and_unload()
-        # Dequantize to fp16 — bitsandbytes 4-bit can't be directly converted to GGUF
-        merged = merged.to(torch.float16)
+        # Save LoRA adapter first, then reload base model in fp16 and merge
+        # (bitsandbytes 4-bit models can't be cast to fp16 directly)
+        print(json.dumps({"event": "saving_adapter"}), file=sys.stderr, flush=True)
+        adapter_dir = "/work/adapter"
+        trainer.model.save_pretrained(adapter_dir)
+        tokenizer.save_pretrained(adapter_dir)
+
+        # Free GPU memory
+        del trainer, model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        # Reload base model in fp16 (no quantization) and merge adapter
+        print(json.dumps({"event": "reloading_fp16"}), file=sys.stderr, flush=True)
+        from peft import PeftModel
+        base_fp16 = AutoModelForCausalLM.from_pretrained(
+            base_model,
+            torch_dtype=torch.float16,
+            device_map="cpu",
+            trust_remote_code=True,
+        )
+        merged = PeftModel.from_pretrained(base_fp16, adapter_dir)
+        merged = merged.merge_and_unload()
+
         save_dir = "/work/result"
+        print(json.dumps({"event": "saving_merged"}), file=sys.stderr, flush=True)
         merged.save_pretrained(save_dir, safe_serialization=True)
         tokenizer.save_pretrained(save_dir)
 
