@@ -183,11 +183,13 @@ def main():
 
         print(json.dumps({"event": "training_done", "duration_ms": duration_ms, "loss": loss}), file=sys.stderr, flush=True)
 
-        # Save merged model as safetensors
+        # Save merged model as fp16 safetensors (dequantize from 4-bit so GGUF conversion works)
         print(json.dumps({"event": "saving_merged"}), file=sys.stderr, flush=True)
         merged = trainer.model.merge_and_unload()
+        # Dequantize to fp16 — bitsandbytes 4-bit can't be directly converted to GGUF
+        merged = merged.to(torch.float16)
         save_dir = "/work/result"
-        merged.save_pretrained(save_dir)
+        merged.save_pretrained(save_dir, safe_serialization=True)
         tokenizer.save_pretrained(save_dir)
 
         # Convert to GGUF for direct use with llama-server
