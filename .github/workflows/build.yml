@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
   packages: write
 
 jobs:
@@ -136,6 +137,7 @@ jobs:
               ghcr.io/ryvion/agent-runner:latest
               ghcr.io/ryvion/agent-runner:${{ github.sha }}
               ghcr.io/ryvion/agent-runner:0.1.0
+              ghcr.io/ryvion/agent-runner:0.1.1
           - name: bitnet-runner
             context: ./bitnet-runner
             dockerfile: ./bitnet-runner/Dockerfile
@@ -173,6 +175,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -180,9 +183,68 @@ jobs:
           platforms: ${{ matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           build-args: ${{ matrix.build_args }}
-          provenance: false
-          sbom: false
+          provenance: true
+          sbom: true
           tags: ${{ matrix.tags }}
+
+      - name: Pull published image for scanning
+        if: github.event_name != 'pull_request'
+        run: docker pull --platform linux/amd64 ${{ matrix.image }}:${{ github.sha }}
+
+      - name: Run Trivy vulnerability scanner on image
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ matrix.image }}:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Run Grype vulnerability scanner on image
+        if: github.event_name != 'pull_request'
+        uses: anchore/scan-action@v7
+        with:
+          image: ${{ matrix.image }}:${{ github.sha }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+
+      - name: Run Trivy vulnerability scanner on filesystem
+        if: github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.context }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: library
+          severity: CRITICAL,HIGH
+
+      - name: Run Grype vulnerability scanner on filesystem
+        if: github.event_name == 'pull_request'
+        uses: anchore/scan-action@v7
+        with:
+          path: ${{ matrix.context }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v4.1.0
+        with:
+          cosign-release: v2.6.3
+
+      - name: Sign pushed runner image
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${{ matrix.image }}@${DIGEST}"
 
   go-lint:
     name: Lint runners

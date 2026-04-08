@@ -1,5 +1,7 @@
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
+ARG SDXL_TURBO_REV=71153311d3dbb46851df1931d3ca6e939de83304
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev && \
     rm -rf /var/lib/apt/lists/*
@@ -13,7 +15,7 @@ RUN pip3 install --no-cache-dir \
 RUN python3 -c "\
 from diffusers import AutoPipelineForText2Image; \
 import torch, os; \
-p = AutoPipelineForText2Image.from_pretrained('stabilityai/sdxl-turbo', torch_dtype=torch.float16, variant='fp16'); \
+p = AutoPipelineForText2Image.from_pretrained('stabilityai/sdxl-turbo', revision='${SDXL_TURBO_REV}', torch_dtype=torch.float16, variant='fp16'); \
 cache = os.path.expanduser('~/.cache/huggingface/hub'); \
 total = sum(os.path.getsize(os.path.join(d,f)) for d,_,files in os.walk(cache) for f in files); \
 print(f'SDXL Turbo cached: {total/1024/1024:.0f} MB')"

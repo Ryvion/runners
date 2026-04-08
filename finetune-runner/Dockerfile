@@ -1,5 +1,7 @@
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
+ARG LLAMA_CPP_REF=660600081fb7b9b769ded5c805a2d39a419f0a0d
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev build-essential cmake curl \
     ca-certificates git && \
@@ -22,6 +24,9 @@ RUN pip3 install --no-cache-dir \
 # GGUF tools — install AFTER training stack, don't let it override torch
 RUN pip3 install --no-cache-dir --no-deps gguf && \
     git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama.cpp && \
+    cd /opt/llama.cpp && \
+    git fetch --depth 1 origin "${LLAMA_CPP_REF}" && \
+    git checkout --detach "${LLAMA_CPP_REF}" && \
     pip3 install --no-cache-dir --no-deps numpy
 
 # Verify torch is still CUDA and correct version

@@ -1,5 +1,8 @@
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
+ARG LLAMA3_REV=a06c33ec89c1e3402009fb47f466a89127c6d223
+ARG LLAMA3_SHA256=86c8ea6c8b755687d0b723176fcd0b2411ef80533d23e2a5030f845d13ab2db7
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-dev build-essential cmake curl ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
@@ -10,7 +13,8 @@ RUN pip3 install --no-cache-dir llama-cpp-python==0.3.8
 
 RUN mkdir -p /models && \
     curl -fSL --retry 3 -o /models/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf \
-    "https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf"
+    "https://huggingface.co/QuantFactory/Meta-Llama-3-8B-Instruct-GGUF/resolve/${LLAMA3_REV}/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf" && \
+    echo "${LLAMA3_SHA256}  /models/Meta-Llama-3-8B-Instruct.Q4_K_M.gguf" | sha256sum -c -
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 

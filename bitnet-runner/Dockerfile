@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Clone bitnet.cpp with llama.cpp submodule
 ARG BITNET_REF=01eb415772c342d9f20dc42772f1583ae1e5b102
+ARG BITNET_MODEL_REV=a1f2f1c765812aa8af3f6eda4a313707064bba15
+ARG BITNET_MODEL_SHA256=4221b252fdd5fd25e15847adfeb5ee88886506ba50b8a34548374492884c2162
 RUN git clone --depth 1 https://github.com/microsoft/BitNet.git /opt/bitnet && \
     cd /opt/bitnet && \
     git fetch --depth 1 origin "${BITNET_REF}" && \
@@ -34,8 +36,10 @@ RUN python3 -c 'from pathlib import Path; p = Path("src/ggml-bitnet-mad.cpp"); s
 # Download the pre-converted GGUF; BitNet's converter does not support the
 # raw BitNetForCausalLM HF architecture yet.
 RUN huggingface-cli download microsoft/BitNet-b1.58-2B-4T-gguf \
+    --revision "${BITNET_MODEL_REV}" \
     --include "ggml-model-i2_s.gguf" \
-    --local-dir models/BitNet-b1.58-2B-4T
+    --local-dir models/BitNet-b1.58-2B-4T && \
+    echo "${BITNET_MODEL_SHA256}  models/BitNet-b1.58-2B-4T/ggml-model-i2_s.gguf" | sha256sum -c -
 
 # setup_env.py: generates kernels and compiles llama-cli, then reuses the GGUF.
 RUN /opt/venv/bin/python setup_env.py -md models/BitNet-b1.58-2B-4T -q i2_s || \

@@ -5,8 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir \
-    torch torchaudio --index-url https://download.pytorch.org/whl/cu124 && \
-    pip3 install --no-cache-dir openai-whisper
+    torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124 && \
+    pip3 install --no-cache-dir openai-whisper==20250625
 
 # Pre-download whisper models into cache (avoids runtime network dependency)
 RUN python3 -c "import whisper; whisper.load_model('base'); whisper.load_model('small')"
