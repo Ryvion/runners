@@ -127,6 +127,15 @@ jobs:
               ghcr.io/ryvion/finetune-runner:latest
               ghcr.io/ryvion/finetune-runner:${{ github.sha }}
               ghcr.io/ryvion/finetune-runner:0.1.0
+          - name: agent-runner
+            context: ./agent-runner
+            dockerfile: ./agent-runner/Dockerfile
+            image: ghcr.io/ryvion/agent-runner
+            platforms: linux/amd64,linux/arm64
+            tags: |
+              ghcr.io/ryvion/agent-runner:latest
+              ghcr.io/ryvion/agent-runner:${{ github.sha }}
+              ghcr.io/ryvion/agent-runner:0.1.0
           - name: bitnet-runner
             context: ./bitnet-runner
             dockerfile: ./bitnet-runner/Dockerfile
@@ -199,3 +208,5 @@ jobs:
         run: python -m py_compile model-runner/run.py
       - name: Check finetune-runner syntax
         run: python -m py_compile finetune-runner/train.py
+      - name: Check agent-runner syntax
+        run: python -m py_compile agent-runner/run.py

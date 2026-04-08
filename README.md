@@ -5,6 +5,7 @@ This repository owns the workload-specific container images that `hub-orch` can 
 Current scope:
 
 - `embed-runner`
+- `agent-runner`
 - `image-gen-runner`
 - `llm-runner`
 - `transcode-runner`
@@ -17,6 +18,7 @@ Runner ownership rule:
 - Runner images live in this repository.
 - `node-agent` is responsible for runtime execution, not for owning runner image definitions.
 - `vllm-runner` remains the batched large-model container family used by `hub-orch` for the GPU-heavy OpenAI-compatible model tags.
+- `agent-runner` is the default persistent-agent starter image used by `hub-orch` when a buyer deploys an agent without providing a custom image.
 
 Runner contract:
 
@@ -40,6 +42,7 @@ Compatibility:
 
 - The CI workflow publishes the exact image names `hub-orch` routes today:
 	- `ghcr.io/ryvion/embed-runner:0.1.0`
+	- `ghcr.io/ryvion/agent-runner:0.1.0`
 	- `ghcr.io/ryvion/image-gen-runner:0.1.0`
 	- `ghcr.io/ryvion/llm-runner:0.1.0`
 	- `ghcr.io/ryvion/transcode-runner:0.1.0`
