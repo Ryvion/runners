@@ -20,8 +20,12 @@ WORKDIR /opt/bitnet
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
+# Patch const-correctness error in ggml-bitnet-mad.cpp for clang-18
+# (upstream issue: int8_t* from const int8_t* assignment)
+RUN sed -i 's/int8_t \*scales = /const int8_t *scales = /g' src/ggml-bitnet-mad.cpp 2>/dev/null || true
+
 # setup_env.py: downloads model, generates kernels, compiles llama-cli
-# Print compile.log on failure for debugging
+ENV CXXFLAGS="-Wno-error=incompatible-pointer-types-discards-qualifiers"
 RUN /opt/venv/bin/python setup_env.py -md microsoft/BitNet-b1.58-2B-4T -q i2_s || \
     (cat logs/compile.log 2>/dev/null; exit 1)
 
