@@ -13,28 +13,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ln -sf /usr/bin/clang++-18 /usr/bin/clang++
 
 # Clone bitnet.cpp with llama.cpp submodule
-RUN git clone --recursive --depth 1 https://github.com/microsoft/BitNet.git /opt/bitnet
+ARG BITNET_REF=01eb415772c342d9f20dc42772f1583ae1e5b102
+RUN git clone --depth 1 https://github.com/microsoft/BitNet.git /opt/bitnet && \
+    cd /opt/bitnet && \
+    git fetch --depth 1 origin "${BITNET_REF}" && \
+    git checkout --detach "${BITNET_REF}" && \
+    git submodule update --init --recursive --depth 1
 WORKDIR /opt/bitnet
 
 # Install Python deps in venv
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Patch setup_env.py: split configure and build so we can fix source between them.
-# Step 1: Run setup_env to download model, generate kernels, configure cmake (but skip compile).
-RUN sed -i 's/run_command(\["cmake", "--build"/# PATCHED: skip build\n    # run_command(["cmake", "--build"/' setup_env.py && \
-    /opt/venv/bin/python setup_env.py -md microsoft/BitNet-b1.58-2B-4T -q i2_s || true
+# Patch upstream const-correctness error in the AVX2 kernel before setup_env.py
+# compiles llama-cli. Keep this explicit so upstream source drift fails loudly.
+RUN python3 -c 'from pathlib import Path; p = Path("src/ggml-bitnet-mad.cpp"); s = p.read_text(); old = "        int8_t * y_col = y + col * by;"; new = "        const int8_t * y_col = y + col * by;"; assert old in s, "expected BitNet source pattern not found"; p.write_text(s.replace(old, new))' && \
+    grep -F "const int8_t * y_col = y + col * by;" src/ggml-bitnet-mad.cpp
 
-# Step 2: Patch const-correctness errors in generated source.
-# Upstream bug: assigns const int8_t* to int8_t* in AVX2 kernels.
-RUN find . -name "*.cpp" -exec sed -i \
-    -e 's/int8_t \* y_col = y + col/const int8_t * y_col = y + col/g' \
-    -e 's/int8_t \*scales = /const int8_t *scales = /g' \
-    {} + 2>/dev/null || true
-
-# Step 3: Build manually.
-RUN cmake --build build --config Release || \
-    (cat logs/compile.log 2>/dev/null; exit 1)
+# setup_env.py: downloads model, generates kernels, compiles llama-cli
+RUN /opt/venv/bin/python setup_env.py -hr microsoft/BitNet-b1.58-2B-4T -q i2_s || \
+    (cat logs/*.log 2>/dev/null; exit 1)
 
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04
