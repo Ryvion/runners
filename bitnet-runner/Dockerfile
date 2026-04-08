@@ -20,12 +20,20 @@ WORKDIR /opt/bitnet
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Patch setup_env.py to add -fpermissive to cmake flags
-# (fixes const int8_t* -> int8_t* assignment error in ggml-bitnet-mad.cpp with clang-18)
-RUN sed -i 's/"-DCMAKE_CXX_COMPILER=clang++"/"-DCMAKE_CXX_COMPILER=clang++", "-DCMAKE_CXX_FLAGS=-fpermissive"/g' setup_env.py
+# Patch setup_env.py: split configure and build so we can fix source between them.
+# Step 1: Run setup_env to download model, generate kernels, configure cmake (but skip compile).
+RUN sed -i 's/run_command(\["cmake", "--build"/# PATCHED: skip build\n    # run_command(["cmake", "--build"/' setup_env.py && \
+    /opt/venv/bin/python setup_env.py -md microsoft/BitNet-b1.58-2B-4T -q i2_s || true
 
-# setup_env.py: downloads model, generates kernels, compiles llama-cli
-RUN /opt/venv/bin/python setup_env.py -md microsoft/BitNet-b1.58-2B-4T -q i2_s || \
+# Step 2: Patch const-correctness errors in generated source.
+# Upstream bug: assigns const int8_t* to int8_t* in AVX2 kernels.
+RUN find . -name "*.cpp" -exec sed -i \
+    -e 's/int8_t \* y_col = y + col/const int8_t * y_col = y + col/g' \
+    -e 's/int8_t \*scales = /const int8_t *scales = /g' \
+    {} + 2>/dev/null || true
+
+# Step 3: Build manually.
+RUN cmake --build build --config Release || \
     (cat logs/compile.log 2>/dev/null; exit 1)
 
 # ---------------------------------------------------------------------------
