@@ -23,6 +23,8 @@ print(f'SDXL Turbo cached: {total/1024/1024:.0f} MB')"
 # ---------------------------------------------------------------------------
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
+ARG SDXL_TURBO_REV=71153311d3dbb46851df1931d3ca6e939de83304
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip libgomp1 && \
     rm -rf /var/lib/apt/lists/*
@@ -37,6 +39,12 @@ COPY --from=builder /root/.cache/huggingface /root/.cache/huggingface
 ENV HF_HOME=/root/.cache/huggingface
 ENV TRANSFORMERS_OFFLINE=1
 ENV HF_HUB_OFFLINE=1
+
+RUN python3 -c "\
+from diffusers import AutoPipelineForText2Image; \
+import torch; \
+AutoPipelineForText2Image.from_pretrained('stabilityai/sdxl-turbo', revision='${SDXL_TURBO_REV}', torch_dtype=torch.float16, variant='fp16', local_files_only=True); \
+print('offline sdxl-turbo load ok')"
 
 COPY run.py /app/run.py
 WORKDIR /work

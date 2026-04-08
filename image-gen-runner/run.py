@@ -22,7 +22,9 @@ METRICS_PATH = Path("/work/metrics.json")
 
 MODELS = {
     "sdxl-turbo": "stabilityai/sdxl-turbo",
-    "stable-diffusion-xl": "stabilityai/stable-diffusion-xl-base-1.0",
+}
+MODEL_REVISIONS = {
+    "sdxl-turbo": "71153311d3dbb46851df1931d3ca6e939de83304",
 }
 DEFAULT_MODEL = "sdxl-turbo"
 
@@ -68,7 +70,17 @@ def main() -> int:
         return 1
 
     model_name = str(job.get("model") or DEFAULT_MODEL).strip()
-    hf_model = MODELS.get(model_name, MODELS[DEFAULT_MODEL])
+    if model_name not in MODELS:
+        print(f"ERROR: unsupported model {model_name}", file=sys.stderr)
+        fail_receipt(f"unsupported model {model_name}")
+        return 1
+
+    hf_model = MODELS[model_name]
+    model_revision = MODEL_REVISIONS.get(model_name)
+    if not model_revision:
+        print(f"ERROR: model {model_name} is not preloaded for offline execution", file=sys.stderr)
+        fail_receipt(f"model {model_name} is not preloaded for offline execution")
+        return 1
     width = int(job.get("width") or 512)
     height = int(job.get("height") or 512)
     quality = str(job.get("quality") or "standard").strip()
@@ -111,6 +123,7 @@ def main() -> int:
 
         pipe = AutoPipelineForText2Image.from_pretrained(
             hf_model,
+            revision=model_revision,
             torch_dtype=dtype,
             variant="fp16" if dtype == torch.float16 else None,
             local_files_only=True,  # Never try to download — model is pre-baked
