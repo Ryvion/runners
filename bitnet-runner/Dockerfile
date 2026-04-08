@@ -1,29 +1,35 @@
 # BitNet 1-bit LLM inference runner for Ryvion.
 # CPU-only inference using Microsoft's bitnet.cpp framework.
 
-FROM python:3.11-slim-bookworm AS builder
+FROM ubuntu:24.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git cmake build-essential clang ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+    git cmake build-essential clang-18 ca-certificates \
+    python3 python3-pip python3-venv && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/clang-18 /usr/bin/clang && \
+    ln -sf /usr/bin/clang++-18 /usr/bin/clang++
 
 # Clone bitnet.cpp with llama.cpp submodule
 RUN git clone --recursive --depth 1 https://github.com/microsoft/BitNet.git /opt/bitnet
 WORKDIR /opt/bitnet
 
-# Install Python deps
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python deps in venv
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# setup_env.py downloads the model from HuggingFace, converts to GGUF,
-# generates optimised kernels, and compiles llama-cli.
-# Use the official HF model ID (NOT the pre-converted gguf repo).
-RUN python setup_env.py -md microsoft/BitNet-b1.58-2B-4T -q i2_s
+# setup_env.py: downloads model, generates kernels, compiles llama-cli
+# Print compile.log on failure for debugging
+RUN /opt/venv/bin/python setup_env.py -md microsoft/BitNet-b1.58-2B-4T -q i2_s || \
+    (cat logs/compile.log 2>/dev/null; exit 1)
 
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim-bookworm
+FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 && \
+    python3 libgomp1 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy compiled binary and model
@@ -37,4 +43,4 @@ STOPSIGNAL SIGTERM
 
 USER runner
 WORKDIR /work
-ENTRYPOINT ["python", "-u", "/app/run.py"]
+ENTRYPOINT ["python3", "-u", "/app/run.py"]
