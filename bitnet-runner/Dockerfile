@@ -31,8 +31,14 @@ ENV PATH="/opt/venv/bin:${PATH}"
 RUN python3 -c 'from pathlib import Path; p = Path("src/ggml-bitnet-mad.cpp"); s = p.read_text(); old = "        int8_t * y_col = y + col * by;"; new = "        const int8_t * y_col = y + col * by;"; assert old in s, "expected BitNet source pattern not found"; p.write_text(s.replace(old, new))' && \
     grep -F "const int8_t * y_col = y + col * by;" src/ggml-bitnet-mad.cpp
 
-# setup_env.py: downloads model, generates kernels, compiles llama-cli
-RUN /opt/venv/bin/python setup_env.py -hr microsoft/BitNet-b1.58-2B-4T -q i2_s || \
+# Download the pre-converted GGUF; BitNet's converter does not support the
+# raw BitNetForCausalLM HF architecture yet.
+RUN huggingface-cli download microsoft/BitNet-b1.58-2B-4T-gguf \
+    --include "ggml-model-i2_s.gguf" \
+    --local-dir models/BitNet-b1.58-2B-4T
+
+# setup_env.py: generates kernels and compiles llama-cli, then reuses the GGUF.
+RUN /opt/venv/bin/python setup_env.py -md models/BitNet-b1.58-2B-4T -q i2_s || \
     (cat logs/*.log 2>/dev/null; exit 1)
 
 # ---------------------------------------------------------------------------
