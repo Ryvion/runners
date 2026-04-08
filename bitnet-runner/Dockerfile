@@ -24,6 +24,7 @@ WORKDIR /opt/bitnet
 # Install Python deps in venv
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+ENV PATH="/opt/venv/bin:${PATH}"
 
 # Patch upstream const-correctness error in the AVX2 kernel before setup_env.py
 # compiles llama-cli. Keep this explicit so upstream source drift fails loudly.
