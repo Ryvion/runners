@@ -20,12 +20,11 @@ WORKDIR /opt/bitnet
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
-# Patch const-correctness error in ggml-bitnet-mad.cpp for clang-18
-# (upstream issue: int8_t* from const int8_t* assignment)
-RUN sed -i 's/int8_t \*scales = /const int8_t *scales = /g' src/ggml-bitnet-mad.cpp 2>/dev/null || true
+# Patch setup_env.py to add -fpermissive to cmake flags
+# (fixes const int8_t* -> int8_t* assignment error in ggml-bitnet-mad.cpp with clang-18)
+RUN sed -i 's/"-DCMAKE_CXX_COMPILER=clang++"/"-DCMAKE_CXX_COMPILER=clang++", "-DCMAKE_CXX_FLAGS=-fpermissive"/g' setup_env.py
 
 # setup_env.py: downloads model, generates kernels, compiles llama-cli
-ENV CXXFLAGS="-Wno-error=incompatible-pointer-types-discards-qualifiers"
 RUN /opt/venv/bin/python setup_env.py -md microsoft/BitNet-b1.58-2B-4T -q i2_s || \
     (cat logs/compile.log 2>/dev/null; exit 1)
 
