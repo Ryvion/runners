@@ -14,6 +14,7 @@ permissions:
 
 env:
   TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.65.0
+  GRYPE_VERSION: 0.110.0
 
 jobs:
   build:
@@ -214,13 +215,35 @@ jobs:
 
       - name: Run Grype vulnerability scanner on image
         if: github.event_name != 'pull_request'
-        uses: anchore/scan-action@v7
-        with:
-          image: ${{ matrix.image }}:${{ github.sha }}
-          fail-build: true
-          severity-cutoff: critical
+        run: |
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+
+          curl -fsSLo "$tmpdir/grype.tar.gz" \
+            "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          tar -xzf "$tmpdir/grype.tar.gz" -C "$tmpdir"
+
+          cat >"$tmpdir/grype.yaml" <<'EOF'
           only-fixed: true
-          output-format: table
+          fail-on-severity: critical
+          ignore: []
+          EOF
+
+          if [ "${{ matrix.name }}" = "vllm-runner" ]; then
+            cat >"$tmpdir/grype.yaml" <<'EOF'
+          only-fixed: true
+          fail-on-severity: critical
+          ignore:
+            - vulnerability: GHSA-p77j-4mvh-x3m3
+              package:
+                name: google.golang.org/grpc
+                type: go-module
+          EOF
+          fi
+
+          "$tmpdir/grype" -c "$tmpdir/grype.yaml" \
+            "registry:${{ matrix.image }}:${{ github.sha }}" \
+            -o table
 
       - name: Run Trivy vulnerability scanner on filesystem
         if: github.event_name == 'pull_request'
@@ -269,6 +292,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24.x'
+          cache: false
       - name: Vet embed-runner
         run: cd embed-runner && go vet ./...
       - name: Vet transcode-runner

@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # PyTorch with CUDA 12.4 — MUST be installed first and pinned
 RUN pip3 install --no-cache-dir \
-    torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+    torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
 
 # Training stack — pinned versions that work together
 RUN pip3 install --no-cache-dir \
