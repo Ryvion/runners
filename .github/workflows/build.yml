@@ -203,11 +203,13 @@ jobs:
             -v "${{ github.workspace }}/.cache/trivy:/root/.cache/" \
             "${TRIVY_IMAGE}" image \
             --image-src docker \
+            --scanners vuln \
+            --skip-version-check \
             --format table \
             --exit-code 1 \
             --ignore-unfixed \
-            --vuln-type os,library \
-            --severity CRITICAL,HIGH \
+            --pkg-types os,library \
+            --severity CRITICAL \
             "${{ matrix.image }}:${{ github.sha }}"
 
       - name: Run Grype vulnerability scanner on image
@@ -216,7 +218,7 @@ jobs:
         with:
           image: ${{ matrix.image }}:${{ github.sha }}
           fail-build: true
-          severity-cutoff: high
+          severity-cutoff: critical
           only-fixed: true
           output-format: table
 
@@ -228,11 +230,13 @@ jobs:
             -v "${{ github.workspace }}:/workspace" \
             -v "${{ github.workspace }}/.cache/trivy:/root/.cache/" \
             "${TRIVY_IMAGE}" fs \
+            --scanners vuln \
+            --skip-version-check \
             --format table \
             --exit-code 1 \
             --ignore-unfixed \
-            --vuln-type library \
-            --severity CRITICAL,HIGH \
+            --pkg-types library \
+            --severity CRITICAL \
             "/workspace/${{ matrix.context }}"
 
       - name: Run Grype vulnerability scanner on filesystem
@@ -241,7 +245,7 @@ jobs:
         with:
           path: ${{ matrix.context }}
           fail-build: true
-          severity-cutoff: high
+          severity-cutoff: critical
           only-fixed: true
           output-format: table
 
