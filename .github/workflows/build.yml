@@ -211,9 +211,13 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           tmpdir="$(mktemp -d)"
-          trap 'rm -rf "$tmpdir"' EXIT
+          trivy_tmpdir="$(mktemp -d /mnt/trivy-tmp.XXXXXX)"
+          trap 'rm -rf "$tmpdir" "$trivy_tmpdir"' EXIT
           mkdir -p "${{ github.workspace }}/.cache/trivy"
-          volume_args=(-v "${{ github.workspace }}/.cache/trivy:/root/.cache/")
+          volume_args=(
+            -v "${{ github.workspace }}/.cache/trivy:/root/.cache/"
+            -v "$trivy_tmpdir:/tmp"
+          )
           ignore_args=()
           if [ "${{ matrix.name }}" = "finetune-runner" ]; then
             printf '%s\n' 'CVE-2025-32434' >"$tmpdir/trivy.ignore"
