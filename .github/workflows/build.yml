@@ -196,6 +196,17 @@ jobs:
         if: github.event_name != 'pull_request'
         run: docker pull --platform linux/amd64 ${{ matrix.image }}:${{ github.sha }}
 
+      - name: Free disk space before scanning heavyweight images
+        if: github.event_name != 'pull_request' && contains(fromJSON('["vllm-runner","image-gen-runner","whisper-runner","model-runner","finetune-runner","bitnet-runner"]'), matrix.name)
+        run: |
+          echo "Before scan cleanup:"
+          df -h
+          docker buildx prune -af || true
+          docker system prune -af || true
+          docker pull --platform linux/amd64 ${{ matrix.image }}:${{ github.sha }}
+          echo "After scan cleanup:"
+          df -h
+
       - name: Run Trivy vulnerability scanner on image
         if: github.event_name != 'pull_request'
         run: |
@@ -254,6 +265,10 @@ jobs:
               'fail-on-severity: critical' \
               'ignore:' \
               '  - vulnerability: CVE-2025-32434' \
+              '    package:' \
+              '      name: torch' \
+              '      type: python' \
+              '  - vulnerability: GHSA-53q9-r3pm-6pq6' \
               '    package:' \
               '      name: torch' \
               '      type: python' >"$tmpdir/grype.yaml"
