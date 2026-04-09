@@ -7,9 +7,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git && \
     rm -rf /var/lib/apt/lists/*
 
-# PyTorch with CUDA 12.4 — MUST be installed first and pinned
+# PyTorch with CUDA 12.4 — MUST be installed first and pinned.
+# torch 2.6.0 breaks the current transformers+bitsandbytes stack at runtime
+# (`No module named 'triton.ops'` on real finetune jobs), so keep the
+# last known-good 2.5.1 until the whole quantization stack is upgraded.
 RUN pip3 install --no-cache-dir \
-    torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+    torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
 
 # Training stack — pinned versions that work together
 RUN pip3 install --no-cache-dir \
@@ -39,6 +42,8 @@ from transformers import AutoModelForCausalLM; print('transformers ok'); \
 from peft import LoraConfig; print('peft ok'); \
 from trl import SFTConfig, SFTTrainer; print('trl ok'); \
 from datasets import Dataset; print('datasets ok'); \
+import bitsandbytes as bnb; print(f'bitsandbytes {bnb.__version__} ok'); \
+import importlib; importlib.import_module('transformers.integrations.bitsandbytes'); print('transformers bitsandbytes integration ok'); \
 print('ALL OK')"
 
 COPY train.py /app/train.py

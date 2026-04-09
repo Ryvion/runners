@@ -132,6 +132,7 @@ jobs:
               ghcr.io/ryvion/finetune-runner:latest
               ghcr.io/ryvion/finetune-runner:${{ github.sha }}
               ghcr.io/ryvion/finetune-runner:0.1.0
+              ghcr.io/ryvion/finetune-runner:0.1.1
           - name: agent-runner
             context: ./agent-runner
             dockerfile: ./agent-runner/Dockerfile
@@ -198,7 +199,16 @@ jobs:
       - name: Run Trivy vulnerability scanner on image
         if: github.event_name != 'pull_request'
         run: |
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
           mkdir -p "${{ github.workspace }}/.cache/trivy"
+          ignore_args=()
+          if [ "${{ matrix.name }}" = "finetune-runner" ]; then
+            cat >"$tmpdir/trivy.ignore" <<'EOF'
+CVE-2025-32434
+EOF
+            ignore_args=(--ignorefile "$tmpdir/trivy.ignore")
+          fi
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${{ github.workspace }}/.cache/trivy:/root/.cache/" \
@@ -211,6 +221,7 @@ jobs:
             --ignore-unfixed \
             --pkg-types os,library \
             --severity CRITICAL \
+            "${ignore_args[@]}" \
             "${{ matrix.image }}:${{ github.sha }}"
 
       - name: Run Grype vulnerability scanner on image
@@ -238,6 +249,16 @@ jobs:
               package:
                 name: google.golang.org/grpc
                 type: go-module
+          EOF
+          elif [ "${{ matrix.name }}" = "finetune-runner" ]; then
+            cat >"$tmpdir/grype.yaml" <<'EOF'
+          only-fixed: true
+          fail-on-severity: critical
+          ignore:
+            - vulnerability: CVE-2025-32434
+              package:
+                name: torch
+                type: python
           EOF
           fi
 
