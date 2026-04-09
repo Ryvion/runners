@@ -210,8 +210,10 @@ jobs:
       - name: Run Trivy vulnerability scanner on image
         if: github.event_name != 'pull_request'
         run: |
+          sudo mkdir -p /mnt/trivy-tmp
+          sudo chown "$(id -u):$(id -g)" /mnt/trivy-tmp
           tmpdir="$(mktemp -d)"
-          trivy_tmpdir="$(mktemp -d /mnt/trivy-tmp.XXXXXX)"
+          trivy_tmpdir="$(mktemp -d /mnt/trivy-tmp/trivy.XXXXXX)"
           trap 'rm -rf "$tmpdir" "$trivy_tmpdir"' EXIT
           mkdir -p "${{ github.workspace }}/.cache/trivy"
           volume_args=(
