@@ -179,7 +179,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push scan tag
         id: build
         uses: docker/build-push-action@v6
         with:
@@ -190,7 +190,7 @@ jobs:
           build-args: ${{ matrix.build_args }}
           provenance: true
           sbom: true
-          tags: ${{ matrix.tags }}
+          tags: ${{ matrix.image }}:${{ github.sha }}
 
       - name: Pull published image for scanning
         if: github.event_name != 'pull_request'
@@ -202,16 +202,16 @@ jobs:
           tmpdir="$(mktemp -d)"
           trap 'rm -rf "$tmpdir"' EXIT
           mkdir -p "${{ github.workspace }}/.cache/trivy"
+          volume_args=(-v "${{ github.workspace }}/.cache/trivy:/root/.cache/")
           ignore_args=()
           if [ "${{ matrix.name }}" = "finetune-runner" ]; then
-            cat >"$tmpdir/trivy.ignore" <<'EOF'
-          CVE-2025-32434
-          EOF
-            ignore_args=(--ignorefile "$tmpdir/trivy.ignore")
+            printf '%s\n' 'CVE-2025-32434' >"$tmpdir/trivy.ignore"
+            volume_args+=(-v "$tmpdir:/scan")
+            ignore_args=(--ignorefile /scan/trivy.ignore)
           fi
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "${{ github.workspace }}/.cache/trivy:/root/.cache/" \
+            "${volume_args[@]}" \
             "${TRIVY_IMAGE}" image \
             --image-src docker \
             --scanners vuln \
@@ -234,37 +234,56 @@ jobs:
             "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
           tar -xzf "$tmpdir/grype.tar.gz" -C "$tmpdir"
 
-          cat >"$tmpdir/grype.yaml" <<'EOF'
-          only-fixed: true
-          fail-on-severity: critical
-          ignore: []
-          EOF
+          printf '%s\n' \
+            'only-fixed: true' \
+            'fail-on-severity: critical' \
+            'ignore: []' >"$tmpdir/grype.yaml"
 
           if [ "${{ matrix.name }}" = "vllm-runner" ]; then
-            cat >"$tmpdir/grype.yaml" <<'EOF'
-          only-fixed: true
-          fail-on-severity: critical
-          ignore:
-            - vulnerability: GHSA-p77j-4mvh-x3m3
-              package:
-                name: google.golang.org/grpc
-                type: go-module
-          EOF
+            printf '%s\n' \
+              'only-fixed: true' \
+              'fail-on-severity: critical' \
+              'ignore:' \
+              '  - vulnerability: GHSA-p77j-4mvh-x3m3' \
+              '    package:' \
+              '      name: google.golang.org/grpc' \
+              '      type: go-module' >"$tmpdir/grype.yaml"
           elif [ "${{ matrix.name }}" = "finetune-runner" ]; then
-            cat >"$tmpdir/grype.yaml" <<'EOF'
-          only-fixed: true
-          fail-on-severity: critical
-          ignore:
-            - vulnerability: CVE-2025-32434
-              package:
-                name: torch
-                type: python
-          EOF
+            printf '%s\n' \
+              'only-fixed: true' \
+              'fail-on-severity: critical' \
+              'ignore:' \
+              '  - vulnerability: CVE-2025-32434' \
+              '    package:' \
+              '      name: torch' \
+              '      type: python' >"$tmpdir/grype.yaml"
           fi
 
           "$tmpdir/grype" -c "$tmpdir/grype.yaml" \
             "registry:${{ matrix.image }}:${{ github.sha }}" \
             -o table
+
+      - name: Promote validated runner image tags
+        if: github.event_name != 'pull_request'
+        env:
+          SOURCE_TAG: ${{ matrix.image }}:${{ github.sha }}
+          TARGET_TAGS: ${{ matrix.tags }}
+        run: |
+          promote_args=()
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            [ "$tag" = "$SOURCE_TAG" ] && continue
+            promote_args+=(-t "$tag")
+          done <<< "$TARGET_TAGS"
+
+          if [ "${#promote_args[@]}" -eq 0 ]; then
+            echo "No additional tags to promote"
+            exit 0
+          fi
+
+          docker buildx imagetools create \
+            "${promote_args[@]}" \
+            "$SOURCE_TAG"
 
       - name: Run Trivy vulnerability scanner on filesystem
         if: github.event_name == 'pull_request'
@@ -299,7 +318,7 @@ jobs:
         with:
           cosign-release: v2.6.3
 
-      - name: Sign pushed runner image
+      - name: Sign validated runner image
         if: github.event_name != 'pull_request'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
