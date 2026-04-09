@@ -205,8 +205,8 @@ jobs:
           ignore_args=()
           if [ "${{ matrix.name }}" = "finetune-runner" ]; then
             cat >"$tmpdir/trivy.ignore" <<'EOF'
-CVE-2025-32434
-EOF
+          CVE-2025-32434
+          EOF
             ignore_args=(--ignorefile "$tmpdir/trivy.ignore")
           fi
           docker run --rm \
