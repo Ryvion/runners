@@ -192,10 +192,6 @@ jobs:
           sbom: true
           tags: ${{ matrix.image }}:${{ github.sha }}
 
-      - name: Pull published image for scanning
-        if: github.event_name != 'pull_request'
-        run: docker pull --platform linux/amd64 ${{ matrix.image }}:${{ github.sha }}
-
       - name: Free disk space before scanning heavyweight images
         if: github.event_name != 'pull_request' && contains(fromJSON('["vllm-runner","image-gen-runner","whisper-runner","model-runner","finetune-runner","bitnet-runner"]'), matrix.name)
         run: |
@@ -203,13 +199,14 @@ jobs:
           df -h
           docker buildx prune -af || true
           docker system prune -af || true
-          docker pull --platform linux/amd64 ${{ matrix.image }}:${{ github.sha }}
           echo "After scan cleanup:"
           df -h
 
       - name: Run Trivy vulnerability scanner on image
         if: github.event_name != 'pull_request'
         run: |
+          export TRIVY_USERNAME="${{ github.actor }}"
+          export TRIVY_PASSWORD="${{ secrets.GITHUB_TOKEN }}"
           sudo mkdir -p /mnt/trivy-tmp
           sudo chown "$(id -u):$(id -g)" /mnt/trivy-tmp
           tmpdir="$(mktemp -d)"
@@ -219,6 +216,8 @@ jobs:
           volume_args=(
             -v "${{ github.workspace }}/.cache/trivy:/root/.cache/"
             -v "$trivy_tmpdir:/tmp"
+            -e TRIVY_USERNAME
+            -e TRIVY_PASSWORD
           )
           ignore_args=()
           if [ "${{ matrix.name }}" = "finetune-runner" ]; then
@@ -227,10 +226,8 @@ jobs:
             ignore_args=(--ignorefile /scan/trivy.ignore)
           fi
           docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
             "${volume_args[@]}" \
             "${TRIVY_IMAGE}" image \
-            --image-src docker \
             --scanners vuln \
             --skip-version-check \
             --format table \
